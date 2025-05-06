@@ -1,0 +1,29 @@
+# Don't include Python cache files or virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# Don't include system files
+.DS_Store
+Thumbs.db
+
+# Ignore version control folders
+.git/
+.gitignore
+
+# Ignore IDE/editor settings
+.vscode/
+.idea/
+
+# Ignore OS-specific or backup files
+*.swp
+*.bak
+*.tmp
+
+# Ignore test and example data files
+tests/
+examples/
+
+# Do NOT ignore .streamlit/ so users can configure config.toml
