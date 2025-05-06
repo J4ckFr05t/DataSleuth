@@ -1,0 +1,2 @@
+[server]
+maxUploadSize = 3000  # Size in MB (this will set the limit to 1 GB)
