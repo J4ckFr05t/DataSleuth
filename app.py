@@ -11,7 +11,7 @@ import base64
 from collections import Counter
 import numpy as np
 
-st.set_page_config(page_title="🧠 Smart EDA Viewer", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
 # Dark mode style
 dark_style = """
@@ -28,7 +28,7 @@ body {
 """
 st.markdown(dark_style, unsafe_allow_html=True)
 
-st.title("📊 Smart EDA Viewer")
+st.title("📊 DataSleuth - Smart EDA Viewer")
 
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
