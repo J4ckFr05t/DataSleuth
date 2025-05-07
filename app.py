@@ -73,26 +73,34 @@ def extract_country_region(text, country_list, region_list):
         "regions": matched_regions
     }
 
-
 def detect_pattern(value):
+    value = str(value).strip()
     known_patterns = {
-        r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$": "IPv4",
-        r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$": "MAC Address",
-        r"^\S+@\S+\.\S+$": "Email",
-        r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$": "FQDN",
+        r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$": ("IPv4", "<octet>.<octet>.<octet>.<octet>"),
+        r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$": ("MAC Address", "<hex>:<hex>:<hex>:<hex>:<hex>:<hex>"),
+        r"^([a-zA-Z0-9_.+-]+)\@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$": ("Email", "<username>@<domain>.<tld>"),
+        r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$": ("FQDN", "<subdomain>.<domain>.<tld>"),
     }
-    for pat, label in known_patterns.items():
-        if re.match(pat, str(value)): return label
+    for pat, (label, example) in known_patterns.items():
+        if re.match(pat, value):
+            return label, example
 
-    # Abstract pattern: A=uppercase, a=lowercase, 9=digit, @=special
+    # Symbolic abstraction: A=uppercase, a=lowercase, 9=digit, @=special
+    symbol_map = {
+        'A': lambda c: c.isupper(),
+        'a': lambda c: c.islower(),
+        '9': lambda c: c.isdigit(),
+        '@': lambda c: re.match(r"\W", c) and not c.isspace()
+    }
     pattern = ""
-    for char in str(value):
-        if char.isupper(): pattern += "A"
-        elif char.islower(): pattern += "a"
-        elif char.isdigit(): pattern += "9"
-        elif re.match(r"\W", char): pattern += "@"
-        else: pattern += "?"
-    return pattern
+    for char in value:
+        for symbol, cond in symbol_map.items():
+            if cond(char):
+                pattern += symbol
+                break
+        else:
+            pattern += '?'
+    return pattern, None
 
 
 if uploaded_file:
@@ -210,34 +218,53 @@ if uploaded_file:
     st.subheader("🔍 Pattern Detection")
     st.markdown("""
     Each value is scanned for **known formats** like IP, MAC, Email, FQDN. 
-    Other values are classified into **abstract patterns** using:
+    If not matched, a symbolic abstraction is used:
     - **A** = Uppercase letter
     - **a** = Lowercase letter
     - **9** = Digit
     - **@** = Special character
     - **?** = Other
     """)
-    pattern_summary = []
+
+    all_pattern_info = []
+
     for col in df.columns:
         col_data = df[col].dropna().astype(str)
         patterns = col_data.apply(detect_pattern)
-        top_patterns = patterns.value_counts(normalize=True).head(5)
-        dominant_pct = top_patterns.iloc[0] * 100 if not top_patterns.empty else 0
-        pattern_summary.append({
-            "Field": col,
-            "Top Pattern": top_patterns.index[0] if not top_patterns.empty else None,
-            "% Values Match": round(dominant_pct, 2),
-            "Flag (<80%)": "⚠️" if dominant_pct < 80 else "✅"
-        })
 
-    pattern_df = pd.DataFrame(pattern_summary)
+        # Count pattern frequencies
+        pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
+        total = pattern_counts.sum()
+
+        pattern_info = []
+        for pat, count in pattern_counts.items():
+            example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
+            confidence = round((count / total) * 100, 2)
+            pattern_info.append({
+                "Field": col,
+                "Pattern": pat,
+                "Example": example if example else "",
+                "Confidence (%)": confidence
+            })
+
+        all_pattern_info.extend(pattern_info)
+
+    pattern_df = pd.DataFrame(all_pattern_info)
+
+    st.markdown("### 📋 Detailed Pattern Report")
     st.dataframe(pattern_df, use_container_width=True)
+
+    st.markdown("### 🌟 Most Common Pattern Per Field")
+    top_patterns = pattern_df.sort_values('Confidence (%)', ascending=False).drop_duplicates('Field')
+    st.dataframe(top_patterns[['Field', 'Pattern', 'Example', 'Confidence (%)']], use_container_width=True)
 
     with st.expander("📤 Export Pattern Detection Results"):
         csv = pattern_df.to_csv(index=False).encode()
-        st.download_button("⬇️ Download CSV", data=csv, file_name="patterns.csv", mime="text/csv")
+        st.download_button("⬇️ Download CSV", data=csv, file_name="all_patterns.csv", mime="text/csv")
+
         html = pattern_df.to_html(index=False)
-        st.download_button("📄 Download HTML", data=html, file_name="patterns.html", mime="text/html")
+        st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
+
 
     st.subheader("🌍 Country/Region Extraction Insights")
     extraction_summary = {}
