@@ -7,3 +7,4 @@ xlrd
 rapidfuzz
 plotly
 fuzzywuzzy
+pyahocorasick

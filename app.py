@@ -321,5 +321,36 @@ if uploaded_file:
                 st.write(f" - {region} (sample: `{hits['region_samples'][region]}`)")
         else:
             st.write("• Regions: None")
+
+    # Aggregate counts
+    country_counter = Counter()
+    region_counter = Counter()
+
+    for info in extraction_summary.values():
+        country_counter.update(info['countries_found'])
+        region_counter.update(info['regions_found'])
+
+    # Display top countries
+    if country_counter:
+        top_countries = pd.DataFrame(country_counter.items(), columns=["Country", "Count"]).sort_values("Count", ascending=False)
+        st.markdown("### 🌎 Top Countries Found")
+        fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_countries), 8)))
+        sns.barplot(data=top_countries, x="Count", y="Country", palette="Blues_d", ax=ax)
+        ax.set_title("Top Matched Countries")
+        st.pyplot(fig)
+    else:
+        st.info("No countries found.")
+
+    # Display top regions
+    if region_counter:
+        top_regions = pd.DataFrame(region_counter.items(), columns=["Region", "Count"]).sort_values("Count", ascending=False)
+        st.markdown("### 🌍 Top Regions Found")
+        fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_regions), 6)))
+        sns.barplot(data=top_regions, x="Count", y="Region", palette="Greens_d", ax=ax)
+        ax.set_title("Top Matched Regions")
+        st.pyplot(fig)
+    else:
+        st.info("No regions found.")
+
 else:
     st.info("📂 Please upload a file to begin analysis.")
