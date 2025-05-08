@@ -6,3 +6,4 @@ openpyxl
 xlrd
 rapidfuzz
 plotly
+fuzzywuzzy
