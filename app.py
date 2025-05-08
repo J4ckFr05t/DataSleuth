@@ -10,6 +10,8 @@ import io
 import base64
 from collections import Counter
 import numpy as np
+import re
+from fuzzywuzzy import process
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
@@ -49,22 +51,47 @@ def simplify_dtype(dtype):
     if pd.api.types.is_datetime64_any_dtype(dtype): return "datetime"
     return "other"
 
-
 def extract_country_region(text, country_list, region_list):
-    text = str(text).lower()
+    text_lower = str(text).lower()
+    tokens = set(re.split(r'\W+', text_lower))  # split on non-word characters
 
-    # Direct substring match
-    matched_countries = [c for c in country_list if c.lower() in text]
-    matched_regions = [r for r in region_list if r.lower() in text]
+    # Precompile multi-word patterns
+    multiword_countries = [c.lower() for c in country_list if ' ' in c]
+    multiword_regions = [r.lower() for r in region_list if ' ' in r]
+    singleword_countries = [c.lower() for c in country_list if ' ' not in c]
+    singleword_regions = [r.lower() for r in region_list if ' ' not in r]
 
-    # Fallback to fuzzy match if no substring hit
+    matched_countries = []
+    matched_regions = []
+
+    # Check multi-word countries
+    for c in multiword_countries:
+        if c in text_lower:
+            matched_countries.append(c)
+
+    # Check single-word countries by tokens
+    for c in singleword_countries:
+        if c in tokens:
+            matched_countries.append(c)
+
+    # Check multi-word regions
+    for r in multiword_regions:
+        if r in text_lower:
+            matched_regions.append(r)
+
+    # Check single-word regions by tokens
+    for r in singleword_regions:
+        if r in tokens:
+            matched_regions.append(r)
+
+    # Fuzzy fallback only if nothing matched
     if not matched_countries:
-        fuzzy_country = process.extractOne(text, country_list, score_cutoff=80)
+        fuzzy_country = process.extractOne(text_lower, country_list, score_cutoff=90)
         if fuzzy_country:
             matched_countries.append(fuzzy_country[0])
 
     if not matched_regions:
-        fuzzy_region = process.extractOne(text, region_list, score_cutoff=80)
+        fuzzy_region = process.extractOne(text_lower, region_list, score_cutoff=90)
         if fuzzy_region:
             matched_regions.append(fuzzy_region[0])
 
@@ -269,21 +296,41 @@ if uploaded_file:
     st.subheader("🌍 Country/Region Extraction Insights")
     extraction_summary = {}
     for col in df.select_dtypes(include=['object', 'string']).columns:
-        results = df[col].dropna().apply(lambda x: extract_country_region(x, COUNTRY_LIST, REGION_LIST))
-        all_countries = [c for res in results for c in res['countries']]
-        all_regions = [r for res in results for r in res['regions']]
-        country_hits = list(set(all_countries))
-        region_hits = list(set(all_regions))
+        results = df[col].dropna().apply(lambda x: (x, extract_country_region(x, COUNTRY_LIST, REGION_LIST)))
+
+        country_samples = {}
+        region_samples = {}
+
+        for val, res in results:
+            for c in res['countries']:
+                if c not in country_samples:
+                    country_samples[c] = val  # first occurrence
+            for r in res['regions']:
+                if r not in region_samples:
+                    region_samples[r] = val  # first occurrence
 
         extraction_summary[col] = {
-            "countries_found": country_hits,
-            "regions_found": region_hits
+            "countries_found": list(country_samples.keys()),
+            "regions_found": list(region_samples.keys()),
+            "country_samples": country_samples,
+            "region_samples": region_samples
         }
+
 
     for col, hits in extraction_summary.items():
         st.markdown(f"**{col}**")
-        st.write(f"• Countries: {', '.join(hits['countries_found']) if hits['countries_found'] else 'None'}")
-        st.write(f"• Regions: {', '.join(hits['regions_found']) if hits['regions_found'] else 'None'}")
+        if hits['countries_found']:
+            st.write("• Countries:")
+            for country in hits['countries_found']:
+                st.write(f" - {country} (sample: `{hits['country_samples'][country]}`)")
+        else:
+            st.write("• Countries: None")
 
+        if hits['regions_found']:
+            st.write("• Regions:")
+            for region in hits['regions_found']:
+                st.write(f" - {region} (sample: `{hits['region_samples'][region]}`)")
+        else:
+            st.write("• Regions: None")
 else:
     st.info("📂 Please upload a file to begin analysis.")
