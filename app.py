@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from itertools import combinations
-from rapidfuzz import process
 import re
 import streamlit.components.v1 as components
 import io
@@ -11,7 +10,8 @@ import base64
 from collections import Counter
 import numpy as np
 import re
-from fuzzywuzzy import process
+import ahocorasick
+
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
@@ -51,55 +51,6 @@ def simplify_dtype(dtype):
     if pd.api.types.is_datetime64_any_dtype(dtype): return "datetime"
     return "other"
 
-def extract_country_region(text, country_list, region_list):
-    text_lower = str(text).lower()
-    tokens = set(re.split(r'\W+', text_lower))  # split on non-word characters
-
-    # Precompile multi-word patterns
-    multiword_countries = [c.lower() for c in country_list if ' ' in c]
-    multiword_regions = [r.lower() for r in region_list if ' ' in r]
-    singleword_countries = [c.lower() for c in country_list if ' ' not in c]
-    singleword_regions = [r.lower() for r in region_list if ' ' not in r]
-
-    matched_countries = []
-    matched_regions = []
-
-    # Check multi-word countries
-    for c in multiword_countries:
-        if c in text_lower:
-            matched_countries.append(c)
-
-    # Check single-word countries by tokens
-    for c in singleword_countries:
-        if c in tokens:
-            matched_countries.append(c)
-
-    # Check multi-word regions
-    for r in multiword_regions:
-        if r in text_lower:
-            matched_regions.append(r)
-
-    # Check single-word regions by tokens
-    for r in singleword_regions:
-        if r in tokens:
-            matched_regions.append(r)
-
-    # Fuzzy fallback only if nothing matched
-    if not matched_countries:
-        fuzzy_country = process.extractOne(text_lower, country_list, score_cutoff=90)
-        if fuzzy_country:
-            matched_countries.append(fuzzy_country[0])
-
-    if not matched_regions:
-        fuzzy_region = process.extractOne(text_lower, region_list, score_cutoff=90)
-        if fuzzy_region:
-            matched_regions.append(fuzzy_region[0])
-
-    return {
-        "countries": matched_countries,
-        "regions": matched_regions
-    }
-
 def detect_pattern(value):
     value = str(value).strip()
     known_patterns = {
@@ -128,6 +79,44 @@ def detect_pattern(value):
         else:
             pattern += '?'
     return pattern, None
+
+AMBIGUOUS_TERMS = {"us", "uk", "ctss", "eire","apache"}
+
+@st.cache_resource
+def build_automaton(keyword_list):
+    A = ahocorasick.Automaton()
+    for idx, word in enumerate(keyword_list):
+        A.add_word(word.lower(), (idx, word))
+    A.make_automaton()
+    return A
+
+# Build automatons once
+COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
+REGION_AUTOMATON = build_automaton(REGION_LIST)
+
+def is_valid_match(term, text):
+    term_l = term.lower()
+    if term_l in AMBIGUOUS_TERMS:
+        return re.search(rf'\\b{re.escape(term_l)}\\b', text.lower()) is not None
+    return True
+
+def extract_country_region(text, *_):
+    text_lower = str(text).lower()
+    countries = set()
+    regions = set()
+
+    for _, (_, match) in COUNTRY_AUTOMATON.iter(text_lower):
+        if is_valid_match(match, text):
+            countries.add(match)
+
+    for _, (_, match) in REGION_AUTOMATON.iter(text_lower):
+        if is_valid_match(match, text):
+            regions.add(match)
+
+    return {
+        "countries": list(countries),
+        "regions": list(regions)
+    }
 
 
 if uploaded_file:
@@ -296,7 +285,7 @@ if uploaded_file:
     st.subheader("🌍 Country/Region Extraction Insights")
     extraction_summary = {}
     for col in df.select_dtypes(include=['object', 'string']).columns:
-        results = df[col].dropna().apply(lambda x: (x, extract_country_region(x, COUNTRY_LIST, REGION_LIST)))
+        results = df[col].dropna().sample(min(1000, df[col].dropna().shape[0]), random_state=42).apply(lambda x: (x, extract_country_region(x)))
 
         country_samples = {}
         region_samples = {}
