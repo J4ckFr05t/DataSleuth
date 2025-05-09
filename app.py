@@ -119,6 +119,9 @@ def extract_country_region(text, *_):
         "regions": list(regions)
     }
 
+def shorten_labels(labels, max_len=20): 
+    """Shortens labels to a maximum length, reserving space for '...'."""
+    return [label if len(label) <= max_len else label[:max_len - 3] + '...' for label in labels]
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
@@ -163,14 +166,17 @@ if uploaded_file:
                 st.dataframe(value_counts, use_container_width=True)
         elif not is_numeric:
             val_counts = col_data.value_counts()
+            # Ensure labels fit well by dynamically setting the figure size
             if nunique <= 50:
                 height = max(0.5 * len(val_counts), 2)  # dynamic height
                 fig, ax = plt.subplots(figsize=(8, height))
-                sns.barplot(x=val_counts.values, y=val_counts.index, ax=ax, palette="viridis")
+                shortened_labels = shorten_labels(val_counts.index.tolist(), max_len=20)
+                sns.barplot(x=val_counts.values, y=shortened_labels, ax=ax, palette="viridis")
                 ax.set_title("Top Values")
                 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
                 ax.set_xlabel("Count")
                 ax.set_ylabel(col)
+                plt.xticks(rotation=45)  # Rotate x-axis labels if needed
                 plt.tight_layout()
                 st.pyplot(fig)
             else:
@@ -178,13 +184,21 @@ if uploaded_file:
                 top10 = val_counts.head(10)
                 height = max(0.5 * len(top10), 2)  # dynamic height
                 fig, ax = plt.subplots(figsize=(8, height))
-                sns.barplot(x=top10.values, y=top10.index, ax=ax, palette="magma")
+                shortened_labels = shorten_labels(top10.index.tolist(), max_len=20)  # Shorten the labels here
+                sns.barplot(x=top10.values, y=shortened_labels, ax=ax, palette="magma")
                 ax.set_title("Top 10 Values")
                 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
                 ax.set_xlabel("Count")
                 ax.set_ylabel(col)
+
+                # Set y-ticks to match the shortened labels
+                ax.set_yticks(range(len(shortened_labels)))  # Adjust y-ticks positions
+                ax.set_yticklabels(shortened_labels)  # Apply shortened labels to y-axis
+                
+                plt.xticks(rotation=45)  # Rotate x-axis labels if needed
                 plt.tight_layout()
                 st.pyplot(fig)
+
         else:
             fig, ax = plt.subplots(figsize=(6, 3))
             sns.histplot(col_data, kde=True, color="teal", ax=ax)
@@ -342,32 +356,43 @@ if uploaded_file:
         country_counter.update(info['countries_found'])
         region_counter.update(info['regions_found'])
 
-    # Display top countries
+    # For top countries plot
     if country_counter:
         top_countries = pd.DataFrame(country_counter.items(), columns=["Country", "Count"]).sort_values("Count", ascending=False)
         top_countries["Count"] = top_countries["Count"].astype(int)  # ensure integers
-        st.markdown("### 🌎 Top Countries Found")
+        top_countries = top_countries.head(10)  # Show only the top 10 countries
+        st.markdown("### 🌎 Top 10 Countries Found")
         fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_countries), 8)))
-        sns.barplot(data=top_countries, x="Count", y="Country", palette="Blues_d", ax=ax)
-        ax.set_title("Top Matched Countries")
+        shortened_labels = shorten_labels(top_countries["Country"].tolist(), max_len=20)  # Shorten labels here
+        sns.barplot(data=top_countries, x="Count", y=shortened_labels, palette="Blues_d", ax=ax)
+        ax.set_title("Top 10 Matched Countries")
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
+        
+        # Rotate y-axis labels slightly
+        plt.yticks(rotation=30)  # Adjust the rotation angle as needed
+        plt.tight_layout()
         st.pyplot(fig)
     else:
         st.info("No countries found.")
 
-    # Display top regions
+    # For top regions plot
     if region_counter:
         top_regions = pd.DataFrame(region_counter.items(), columns=["Region", "Count"]).sort_values("Count", ascending=False)
         top_regions["Count"] = top_regions["Count"].astype(int)  # ensure integers
-        st.markdown("### 🌍 Top Regions Found")
+        top_regions = top_regions.head(10)  # Show only the top 10 regions
+        st.markdown("### 🌍 Top 10 Regions Found")
         fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_regions), 6)))
-        sns.barplot(data=top_regions, x="Count", y="Region", palette="Greens_d", ax=ax)
-        ax.set_title("Top Matched Regions")
+        shortened_labels = shorten_labels(top_regions["Region"].tolist(), max_len=20)  # Shorten labels here
+        sns.barplot(data=top_regions, x="Count", y=shortened_labels, palette="Greens_d", ax=ax)
+        ax.set_title("Top 10 Matched Regions")
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
+        
+        # Rotate y-axis labels slightly
+        plt.yticks(rotation=30)  # Adjust the rotation angle as needed
+        plt.tight_layout()
         st.pyplot(fig)
     else:
         st.info("No regions found.")
-
 
 else:
     st.info("📂 Please upload a file to begin analysis.")
