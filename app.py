@@ -164,15 +164,19 @@ if uploaded_file:
             val_counts = col_data.value_counts()
             if nunique <= 50:
                 fig, ax = plt.subplots(figsize=(8, min(0.3 * len(val_counts), 10)))
-                sns.barplot(x=val_counts.values, y=val_counts.index, ax=ax, palette="viridis")
+                sns.barplot(x=val_counts.index, y=val_counts.values, ax=ax, palette="viridis")
                 ax.set_title("Top Values")
+                ax.set_xlabel("Value")
+                ax.set_ylabel("Count")
                 st.pyplot(fig)
             else:
                 st.caption(f"📊 Showing top 10 of {nunique} unique values")
                 top10 = val_counts.head(10)
                 fig, ax = plt.subplots(figsize=(8, 4))
-                sns.barplot(x=top10.values, y=top10.index, ax=ax, palette="magma")
+                sns.barplot(x=top10.index, y=top10.values, ax=ax, palette="magma")
                 ax.set_title("Top 10 Values")
+                ax.set_xlabel("Value")
+                ax.set_ylabel("Count")
                 st.pyplot(fig)
                 with st.expander("📋 Full Value Counts"):
                     st.dataframe(val_counts.reset_index().rename(columns={"index": "Value", col: "Count"}), use_container_width=True)
@@ -180,6 +184,8 @@ if uploaded_file:
             fig, ax = plt.subplots(figsize=(6, 3))
             sns.histplot(col_data, kde=True, color="teal", ax=ax)
             ax.set_title("Distribution")
+            ax.set_xlabel("Value Bins")
+            ax.set_ylabel("Count")
             st.pyplot(fig)
 
         st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
