@@ -362,7 +362,8 @@ if uploaded_file:
         top_countries["Count"] = top_countries["Count"].astype(int)  # ensure integers
         top_countries = top_countries.head(10)  # Show only the top 10 countries
         st.markdown("### 🌎 Top 10 Countries Found")
-        fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_countries), 8)))
+        fig_height = max(0.5 * len(top_countries), 4)
+        fig, ax = plt.subplots(figsize=(8, fig_height))
         shortened_labels = shorten_labels(top_countries["Country"].tolist())  # Shorten labels here
         sns.barplot(data=top_countries, x="Count", y=shortened_labels, palette="Blues_d", ax=ax)
         ax.set_title("Top 10 Matched Countries")
@@ -381,7 +382,8 @@ if uploaded_file:
         top_regions["Count"] = top_regions["Count"].astype(int)  # ensure integers
         top_regions = top_regions.head(10)  # Show only the top 10 regions
         st.markdown("### 🌍 Top 10 Regions Found")
-        fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_regions), 6)))
+        fig_height = max(0.5 * len(top_regions), 4)
+        fig, ax = plt.subplots(figsize=(8, fig_height))
         shortened_labels = shorten_labels(top_regions["Region"].tolist())  # Shorten labels here
         sns.barplot(data=top_regions, x="Count", y=shortened_labels, palette="Greens_d", ax=ax)
         ax.set_title("Top 10 Matched Regions")
