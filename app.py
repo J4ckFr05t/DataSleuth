@@ -198,12 +198,13 @@ if uploaded_file:
     st.subheader("🗝️ Potential Primary Keys")
     single_keys = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
     st.write("Single column keys:", single_keys if single_keys else "None")
-    composite_keys = []
-    for i in range(2, 4):
-        for combo in combinations(df.columns, i):
-            if df[list(combo)].dropna().drop_duplicates().shape[0] == df.shape[0]:
-                composite_keys.append(combo)
-    st.write("Composite keys:", composite_keys if composite_keys else "None")
+    
+    # composite_keys = []
+    # for i in range(2, 4):
+    #     for combo in combinations(df.columns, i):
+    #         if df[list(combo)].dropna().drop_duplicates().shape[0] == df.shape[0]:
+    #             composite_keys.append(combo)
+    # st.write("Composite keys:", composite_keys if composite_keys else "None")
 
     st.subheader("🔗 Correlation Analysis (Numerical Fields Only)")
     num_df = df.select_dtypes(include="number")
