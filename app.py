@@ -149,6 +149,57 @@ if uploaded_file:
         html = summary_df.to_html(index=False)
         st.download_button("📄 Download as Confluence-compatible HTML", data=html, file_name="eda_summary.html", mime="text/html")
 
+    st.subheader("🗝️ Primary Key Identification")
+
+    # Step 1: Auto-detect single-column primary keys
+    auto_keys = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
+    has_auto_keys = bool(auto_keys)
+
+    if has_auto_keys:
+        st.write("🔍 Automatically Detected Primary Key(s):", auto_keys)
+        user_choice = st.radio(
+            "Are you happy with the automatically detected primary key(s)?",
+            ["Yes", "No", "Skip"],
+            horizontal=True
+        )
+    else:
+        st.warning("❗ No single-column primary keys were automatically detected.")
+        user_choice = st.radio(
+            "No primary key was detected. Do you want to manually choose a key or skip?",
+            ["Choose manually", "Skip"],
+            horizontal=True
+        )
+
+    # Step 2: Handle response
+    if user_choice == "Yes":
+        st.success(f"✅ Using auto-detected primary key(s): {auto_keys}")
+    elif user_choice in ["No", "Choose manually"]:
+        st.info("🔧 Manually choose one or more columns to form a primary key.")
+        manual_keys = st.multiselect(
+            "Select one or more fields (case-insensitive)",
+            options=df.columns.tolist()
+        )
+        if manual_keys:
+            if df[manual_keys].dropna().drop_duplicates().shape[0] == df.shape[0]:
+                st.success(f"✅ Selected fields form a valid primary key: {manual_keys}")
+            else:
+                st.error("❌ Selected fields do not form a unique primary key.")
+        else:
+            st.warning("⚠️ No primary key selected. Proceeding without one.")
+    else:
+        st.info("➡️ Proceeding without setting a primary key.")
+
+    total_records = df.shape[0]
+    primary_keys = manual_keys if 'manual_keys' in locals() and manual_keys else auto_keys if 'auto_keys' in locals() and auto_keys else []
+    st.markdown("### 📌 Dataset Summary")
+
+    if primary_keys:
+        unique_keys = df[primary_keys].dropna().drop_duplicates().shape[0]
+        st.info(f"🔢 Total Records: **{total_records}**  🔑 Unique Primary Keys: **{unique_keys}** (based on `{', '.join(primary_keys)}`)")
+    else:
+        st.info(f"🔢 Total Records: **{total_records}**  🔑 Primary key not selected.")
+
+
     st.subheader("📌 Per Field Insights")
     for col in df.columns:
         st.markdown(f"### 🧬 {col}")
@@ -165,39 +216,48 @@ if uploaded_file:
                 value_counts = value_counts.sort_values("Count", ascending=False)
                 st.dataframe(value_counts, use_container_width=True)
         elif not is_numeric:
-            val_counts = col_data.value_counts()
-            # Ensure labels fit well by dynamically setting the figure size
-            if nunique <= 50:
-                height = max(0.5 * len(val_counts), 2)  # dynamic height
-                fig, ax = plt.subplots(figsize=(8, height))
-                shortened_labels = shorten_labels(val_counts.index.tolist())
-                sns.barplot(x=val_counts.values, y=shortened_labels, ax=ax, palette="viridis")
-                ax.set_title("Top Values")
-                ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-                ax.set_xlabel("Count")
-                ax.set_ylabel(col)
-                plt.xticks(rotation=45)  # Rotate x-axis labels if needed
-                plt.tight_layout()
-                st.pyplot(fig)
-            else:
-                st.caption(f"📊 Showing top 10 of {nunique} unique values")
-                top10 = val_counts.head(10)
-                height = max(0.5 * len(top10), 2)  # dynamic height
-                fig, ax = plt.subplots(figsize=(8, height))
-                shortened_labels = shorten_labels(top10.index.tolist())  # Shorten the labels here
-                sns.barplot(x=top10.values, y=shortened_labels, ax=ax, palette="magma")
-                ax.set_title("Top 10 Values")
-                ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-                ax.set_xlabel("Count")
-                ax.set_ylabel(col)
+            top_n = 10
 
-                # Set y-ticks to match the shortened labels
-                ax.set_yticks(range(len(shortened_labels)))  # Adjust y-ticks positions
-                ax.set_yticklabels(shortened_labels)  # Apply shortened labels to y-axis
-                
-                plt.xticks(rotation=45)  # Rotate x-axis labels if needed
-                plt.tight_layout()
-                st.pyplot(fig)
+            st.markdown("#### Chart A: Top Values (All Rows)")
+            val_counts_total = df[col].value_counts().head(top_n)
+            total_records = df.shape[0]
+            percent_total = (val_counts_total / total_records * 100).round(2)
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            sns.barplot(x=val_counts_total.values, y=shorten_labels(val_counts_total.index.tolist()), ax=ax, palette="Blues_d")
+            ax.set_title("Top 10 Values (All Records)")
+            ax.set_xlabel("Occurrences")
+            ax.set_ylabel(col)
+            st.pyplot(fig)
+
+            st.markdown("**% Coverage (All Records):**")
+            for val, pct in zip(val_counts_total.index.tolist(), percent_total):
+                st.markdown(f"- `{val}`: {pct}%")
+
+            # Determine primary key(s)
+            primary_keys = manual_keys if 'manual_keys' in locals() and manual_keys else auto_keys if 'auto_keys' in locals() and auto_keys else []
+
+            if primary_keys:
+                try:
+                    temp_df = df[primary_keys + [col]].dropna().drop_duplicates(subset=primary_keys)
+                    grouped_counts = temp_df[col].value_counts().head(top_n)
+                    percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
+
+                    st.markdown("#### Chart B: Top Values (Per Primary Key)")
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    sns.barplot(x=grouped_counts.values, y=shorten_labels(grouped_counts.index.tolist()), ax=ax, palette="Greens_d")
+                    ax.set_title("Top 10 Values (Per Unique Primary Key)")
+                    ax.set_xlabel("Occurrences")
+                    ax.set_ylabel(col)
+                    st.pyplot(fig)
+
+                    st.markdown("**% Coverage (Per Primary Key):**")
+                    for val, pct in zip(grouped_counts.index.tolist(), percent_keys):
+                        st.markdown(f"- `{val}`: {pct}%")
+                except Exception as e:
+                    st.error(f"⚠️ Error generating primary key-based chart: {e}")
+            else:
+                st.info("ℹ️ No primary key selected or detected, so Chart B is skipped.")
 
         else:
             fig, ax = plt.subplots(figsize=(6, 3))
@@ -208,17 +268,6 @@ if uploaded_file:
             st.pyplot(fig)
 
         st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
-
-    st.subheader("🗝️ Potential Primary Keys")
-    single_keys = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
-    st.write("Single column keys:", single_keys if single_keys else "None")
-    
-    # composite_keys = []
-    # for i in range(2, 4):
-    #     for combo in combinations(df.columns, i):
-    #         if df[list(combo)].dropna().drop_duplicates().shape[0] == df.shape[0]:
-    #             composite_keys.append(combo)
-    # st.write("Composite keys:", composite_keys if composite_keys else "None")
 
     st.subheader("🔗 Correlation Analysis (Numerical Fields Only)")
     num_df = df.select_dtypes(include="number")
