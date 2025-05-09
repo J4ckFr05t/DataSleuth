@@ -11,6 +11,7 @@ from collections import Counter
 import numpy as np
 import re
 import ahocorasick
+import matplotlib.ticker as mticker
 
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
@@ -163,29 +164,33 @@ if uploaded_file:
         elif not is_numeric:
             val_counts = col_data.value_counts()
             if nunique <= 50:
-                fig, ax = plt.subplots(figsize=(8, min(0.3 * len(val_counts), 10)))
-                sns.barplot(x=val_counts.index, y=val_counts.values, ax=ax, palette="viridis")
+                height = max(0.5 * len(val_counts), 2)  # dynamic height
+                fig, ax = plt.subplots(figsize=(8, height))
+                sns.barplot(x=val_counts.values, y=val_counts.index, ax=ax, palette="viridis")
                 ax.set_title("Top Values")
-                ax.set_xlabel("Value")
-                ax.set_ylabel("Count")
+                ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+                ax.set_xlabel("Count")
+                ax.set_ylabel(col)
+                plt.tight_layout()
                 st.pyplot(fig)
             else:
                 st.caption(f"📊 Showing top 10 of {nunique} unique values")
                 top10 = val_counts.head(10)
-                fig, ax = plt.subplots(figsize=(8, 4))
-                sns.barplot(x=top10.index, y=top10.values, ax=ax, palette="magma")
+                height = max(0.5 * len(top10), 2)  # dynamic height
+                fig, ax = plt.subplots(figsize=(8, height))
+                sns.barplot(x=top10.values, y=top10.index, ax=ax, palette="magma")
                 ax.set_title("Top 10 Values")
-                ax.set_xlabel("Value")
-                ax.set_ylabel("Count")
+                ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+                ax.set_xlabel("Count")
+                ax.set_ylabel(col)
+                plt.tight_layout()
                 st.pyplot(fig)
-                with st.expander("📋 Full Value Counts"):
-                    st.dataframe(val_counts.reset_index().rename(columns={"index": "Value", col: "Count"}), use_container_width=True)
         else:
             fig, ax = plt.subplots(figsize=(6, 3))
             sns.histplot(col_data, kde=True, color="teal", ax=ax)
             ax.set_title("Distribution")
-            ax.set_xlabel("Value Bins")
-            ax.set_ylabel("Count")
+            ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+            plt.tight_layout()
             st.pyplot(fig)
 
         st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
@@ -339,10 +344,12 @@ if uploaded_file:
     # Display top countries
     if country_counter:
         top_countries = pd.DataFrame(country_counter.items(), columns=["Country", "Count"]).sort_values("Count", ascending=False)
+        top_countries["Count"] = top_countries["Count"].astype(int)  # ensure integers
         st.markdown("### 🌎 Top Countries Found")
         fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_countries), 8)))
         sns.barplot(data=top_countries, x="Count", y="Country", palette="Blues_d", ax=ax)
         ax.set_title("Top Matched Countries")
+        ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
         st.pyplot(fig)
     else:
         st.info("No countries found.")
@@ -350,13 +357,16 @@ if uploaded_file:
     # Display top regions
     if region_counter:
         top_regions = pd.DataFrame(region_counter.items(), columns=["Region", "Count"]).sort_values("Count", ascending=False)
+        top_regions["Count"] = top_regions["Count"].astype(int)  # ensure integers
         st.markdown("### 🌍 Top Regions Found")
         fig, ax = plt.subplots(figsize=(8, min(0.4 * len(top_regions), 6)))
         sns.barplot(data=top_regions, x="Count", y="Region", palette="Greens_d", ax=ax)
         ax.set_title("Top Matched Regions")
+        ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
         st.pyplot(fig)
     else:
         st.info("No regions found.")
+
 
 else:
     st.info("📂 Please upload a file to begin analysis.")
