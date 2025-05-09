@@ -220,8 +220,7 @@ if uploaded_file:
 
             st.markdown("#### Chart A: Top Values (All Rows)")
             val_counts_total = df[col].value_counts().head(top_n)
-            total_records = df.shape[0]
-            percent_total = (val_counts_total / total_records * 100).round(2)
+            percent_total = (val_counts_total / total * 100).round(2)
 
             fig, ax = plt.subplots(figsize=(8, 5))
             sns.barplot(x=val_counts_total.values, y=shorten_labels(val_counts_total.index.tolist()), ax=ax, palette="Blues_d")
@@ -230,9 +229,18 @@ if uploaded_file:
             ax.set_ylabel(col)
             st.pyplot(fig)
 
-            st.markdown("**% Coverage (All Records):**")
-            for val, pct in zip(val_counts_total.index.tolist(), percent_total):
-                st.markdown(f"- `{val}`: {pct}%")
+            # Create a table showing values, counts, and percentages
+            percent_table = pd.DataFrame({
+                "Value": val_counts_total.index,
+                "Count": val_counts_total.values,
+                "Percentage (%)": percent_total
+            })
+
+            # Add total count to the table
+            percent_table = pd.concat([percent_table, pd.DataFrame([["Total", total, "100"]], columns=percent_table.columns)], ignore_index=True)
+
+            st.markdown("### 📊 Value Counts and Percentages")
+            st.dataframe(percent_table, use_container_width=True)
 
             # Determine primary key(s)
             primary_keys = manual_keys if 'manual_keys' in locals() and manual_keys else auto_keys if 'auto_keys' in locals() and auto_keys else []
@@ -251,9 +259,19 @@ if uploaded_file:
                     ax.set_ylabel(col)
                     st.pyplot(fig)
 
-                    st.markdown("**% Coverage (Per Primary Key):**")
-                    for val, pct in zip(grouped_counts.index.tolist(), percent_keys):
-                        st.markdown(f"- `{val}`: {pct}%")
+                    # Create a table showing per primary key values, counts, and percentages
+                    percent_key_table = pd.DataFrame({
+                        "Value": grouped_counts.index,
+                        "Count": grouped_counts.values,
+                        "Percentage (%)": percent_keys
+                    })
+
+                    # Add total count to the table
+                    percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
+
+                    st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                    st.dataframe(percent_key_table, use_container_width=True)
+
                 except Exception as e:
                     st.error(f"⚠️ Error generating primary key-based chart: {e}")
             else:
@@ -356,94 +374,57 @@ if uploaded_file:
         html = pattern_df.to_html(index=False)
         st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
 
+    # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
 
     st.subheader("🌍 Country/Region Extraction Insights")
     extraction_summary = {}
+
+    # Collecting all country data for the summary table
+    country_data = []
+
+    # Get the total number of records in the DataFrame
+    total_records = len(df)
+
+    # Loop over each column that contains object or string types
     for col in df.select_dtypes(include=['object', 'string']).columns:
-        results = df[col].dropna().sample(min(1000, df[col].dropna().shape[0]), random_state=42).apply(lambda x: (x, extract_country_region(x)))
+        # Get the non-null values
+        non_null_values = df[col].dropna()
+        
+        # Use all the non-null records
+        sampled_values = non_null_values  # No sampling, use all non-null records
+        
+        # Apply the extraction function to each non-null value
+        results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
 
         country_samples = {}
-        region_samples = {}
 
         for val, res in results:
             for c in res['countries']:
                 if c not in country_samples:
                     country_samples[c] = val  # first occurrence
-            for r in res['regions']:
-                if r not in region_samples:
-                    region_samples[r] = val  # first occurrence
 
-        extraction_summary[col] = {
-            "countries_found": list(country_samples.keys()),
-            "regions_found": list(region_samples.keys()),
-            "country_samples": country_samples,
-            "region_samples": region_samples
-        }
+        # Store the country data in a summary format
+        for country, sample in country_samples.items():
+            count = results[results.apply(lambda x: country in x[1]['countries'])].shape[0]
+            percentage = (count / total_records) * 100  # Calculate the percentage
 
+            country_data.append({
+                'Field': col,
+                'Country': country,
+                'Count': count,
+                'Percentage': f"{percentage:.2f}%",  # Show percentage with 2 decimal places
+                'Sample': sample,
+                'Records Processed': len(sampled_values)  # Number of records sampled from the column
+            })
 
-    for col, hits in extraction_summary.items():
-        st.markdown(f"**{col}**")
-        if hits['countries_found']:
-            st.write("• Countries:")
-            for country in hits['countries_found']:
-                st.write(f" - {country} (sample: `{hits['country_samples'][country]}`)")
-        else:
-            st.write("• Countries: None")
+    # Create a DataFrame to display the country extraction summary
+    country_df = pd.DataFrame(country_data)
 
-        if hits['regions_found']:
-            st.write("• Regions:")
-            for region in hits['regions_found']:
-                st.write(f" - {region} (sample: `{hits['region_samples'][region]}`)")
-        else:
-            st.write("• Regions: None")
-
-    # Aggregate counts
-    country_counter = Counter()
-    region_counter = Counter()
-
-    for info in extraction_summary.values():
-        country_counter.update(info['countries_found'])
-        region_counter.update(info['regions_found'])
-
-    # For top countries plot
-    if country_counter:
-        top_countries = pd.DataFrame(country_counter.items(), columns=["Country", "Count"]).sort_values("Count", ascending=False)
-        top_countries["Count"] = top_countries["Count"].astype(int)  # ensure integers
-        top_countries = top_countries.head(10)  # Show only the top 10 countries
-        st.markdown("### 🌎 Top 10 Countries Found")
-        fig_height = max(0.5 * len(top_countries), 4)
-        fig, ax = plt.subplots(figsize=(8, fig_height))
-        shortened_labels = shorten_labels(top_countries["Country"].tolist())  # Shorten labels here
-        sns.barplot(data=top_countries, x="Count", y=shortened_labels, palette="Blues_d", ax=ax)
-        ax.set_title("Top 10 Matched Countries")
-        ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
-        
-        # Rotate y-axis labels slightly
-        plt.yticks(rotation=30)  # Adjust the rotation angle as needed
-        plt.tight_layout()
-        st.pyplot(fig)
+    # Display the consolidated summary table
+    if not country_df.empty:
+        st.write("### Country Extraction Summary")
+        st.dataframe(country_df)
     else:
-        st.info("No countries found.")
-
-    # For top regions plot
-    if region_counter:
-        top_regions = pd.DataFrame(region_counter.items(), columns=["Region", "Count"]).sort_values("Count", ascending=False)
-        top_regions["Count"] = top_regions["Count"].astype(int)  # ensure integers
-        top_regions = top_regions.head(10)  # Show only the top 10 regions
-        st.markdown("### 🌍 Top 10 Regions Found")
-        fig_height = max(0.5 * len(top_regions), 4)
-        fig, ax = plt.subplots(figsize=(8, fig_height))
-        shortened_labels = shorten_labels(top_regions["Region"].tolist())  # Shorten labels here
-        sns.barplot(data=top_regions, x="Count", y=shortened_labels, palette="Greens_d", ax=ax)
-        ax.set_title("Top 10 Matched Regions")
-        ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))  # force integer ticks
-        
-        # Rotate y-axis labels slightly
-        plt.yticks(rotation=30)  # Adjust the rotation angle as needed
-        plt.tight_layout()
-        st.pyplot(fig)
-    else:
-        st.info("No regions found.")
-
+        st.write("No countries were extracted from the data.")
 else:
     st.info("📂 Please upload a file to begin analysis.")
