@@ -14,36 +14,6 @@ import ahocorasick
 import matplotlib.ticker as mticker
 
 
-st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
-
-# Dark mode style
-dark_style = """
-<style>
-body {
-    background-color: #121212;
-    color: #e0e0e0;
-}
-.stButton>button {
-    background-color: #333 !important;
-    color: white !important;
-}
-</style>
-"""
-st.markdown(dark_style, unsafe_allow_html=True)
-
-st.title("📊 DataSleuth - Smart EDA Viewer")
-
-uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
-
-# Sidebar inputs
-st.sidebar.header("🌍 Country & Region Config")
-countries_input = st.sidebar.text_area("Country List (comma separated)", value="India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People’s Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People’s Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia")
-regions_input = st.sidebar.text_area("Region List (comma separated)", value="APAC, EMEA, EWAP, Global, INDIA, LATAM, MAJOREL, Specialized Services, TGI")
-
-COUNTRY_LIST = [x.strip() for x in countries_input.split(",")]
-REGION_LIST = [x.strip() for x in regions_input.split(",")]
-
-
 def simplify_dtype(dtype):
     if pd.api.types.is_integer_dtype(dtype): return "int"
     if pd.api.types.is_float_dtype(dtype): return "float"
@@ -91,10 +61,6 @@ def build_automaton(keyword_list):
     A.make_automaton()
     return A
 
-# Build automatons once
-COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
-REGION_AUTOMATON = build_automaton(REGION_LIST)
-
 def is_valid_match(term, text):
     term_l = term.lower()
     if term_l in AMBIGUOUS_TERMS:
@@ -122,6 +88,54 @@ def extract_country_region(text, *_):
 def shorten_labels(labels, max_len=50): 
     """Shortens labels to a maximum length, reserving space for '...'."""
     return [label if len(label) <= max_len else label[:max_len - 3] + '...' for label in labels]
+
+
+st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
+
+# Dark mode style
+dark_style = """
+<style>
+body {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+.stButton>button {
+    background-color: #333 !important;
+    color: white !important;
+}
+</style>
+"""
+st.markdown(dark_style, unsafe_allow_html=True)
+
+st.title("📊 DataSleuth - Smart EDA Viewer")
+
+uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
+
+# Toggle visibility of sidebar inputs using a checkbox
+sidebar_visible = st.sidebar.checkbox("Show/Hide Country & Region Config", value=True)
+
+if sidebar_visible:
+    # Sidebar inputs (only visible if the checkbox is checked)
+    st.sidebar.header("🌍 Country & Region Config")
+
+    countries_input = st.sidebar.text_area(
+        "Country List (comma separated)",
+        value="India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People’s Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People’s Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia"
+    )
+    
+    regions_input = st.sidebar.text_area(
+        "Region List (comma separated)",
+        value="APAC, EMEA, EWAP, Global, INDIA, LATAM, MAJOREL, Specialized Services, TGI"
+    )
+
+    COUNTRY_LIST = [x.strip() for x in countries_input.split(",")]
+    REGION_LIST = [x.strip() for x in regions_input.split(",")]
+
+    # Build automatons once
+    COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
+    REGION_AUTOMATON = build_automaton(REGION_LIST)
+else:
+    st.sidebar.write("Sidebar content is hidden.")
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
@@ -374,57 +388,58 @@ if uploaded_file:
         html = pattern_df.to_html(index=False)
         st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
 
-    # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
+    if sidebar_visible:
+        # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
 
-    st.subheader("🌍 Country/Region Extraction Insights")
-    extraction_summary = {}
+        st.subheader("🌍 Country/Region Extraction Insights")
+        extraction_summary = {}
 
-    # Collecting all country data for the summary table
-    country_data = []
+        # Collecting all country data for the summary table
+        country_data = []
 
-    # Get the total number of records in the DataFrame
-    total_records = len(df)
+        # Get the total number of records in the DataFrame
+        total_records = len(df)
 
-    # Loop over each column that contains object or string types
-    for col in df.select_dtypes(include=['object', 'string']).columns:
-        # Get the non-null values
-        non_null_values = df[col].dropna()
-        
-        # Use all the non-null records
-        sampled_values = non_null_values  # No sampling, use all non-null records
-        
-        # Apply the extraction function to each non-null value
-        results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
+        # Loop over each column that contains object or string types
+        for col in df.select_dtypes(include=['object', 'string']).columns:
+            # Get the non-null values
+            non_null_values = df[col].dropna()
+            
+            # Use all the non-null records
+            sampled_values = non_null_values  # No sampling, use all non-null records
+            
+            # Apply the extraction function to each non-null value
+            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
 
-        country_samples = {}
+            country_samples = {}
 
-        for val, res in results:
-            for c in res['countries']:
-                if c not in country_samples:
-                    country_samples[c] = val  # first occurrence
+            for val, res in results:
+                for c in res['countries']:
+                    if c not in country_samples:
+                        country_samples[c] = val  # first occurrence
 
-        # Store the country data in a summary format
-        for country, sample in country_samples.items():
-            count = results[results.apply(lambda x: country in x[1]['countries'])].shape[0]
-            percentage = (count / total_records) * 100  # Calculate the percentage
+            # Store the country data in a summary format
+            for country, sample in country_samples.items():
+                count = results[results.apply(lambda x: country in x[1]['countries'])].shape[0]
+                percentage = (count / total_records) * 100  # Calculate the percentage
 
-            country_data.append({
-                'Field': col,
-                'Country': country,
-                'Count': count,
-                'Percentage': f"{percentage:.2f}%",  # Show percentage with 2 decimal places
-                'Sample': sample,
-                'Records Processed': len(sampled_values)  # Number of records sampled from the column
-            })
+                country_data.append({
+                    'Field': col,
+                    'Country': country,
+                    'Count': count,
+                    'Percentage': f"{percentage:.2f}%",  # Show percentage with 2 decimal places
+                    'Sample': sample,
+                    'Records Processed': len(sampled_values)  # Number of records sampled from the column
+                })
 
-    # Create a DataFrame to display the country extraction summary
-    country_df = pd.DataFrame(country_data)
+        # Create a DataFrame to display the country extraction summary
+        country_df = pd.DataFrame(country_data)
 
-    # Display the consolidated summary table
-    if not country_df.empty:
-        st.write("### Country Extraction Summary")
-        st.dataframe(country_df)
-    else:
-        st.write("No countries were extracted from the data.")
+        # Display the consolidated summary table
+        if not country_df.empty:
+            st.write("### Country Extraction Summary")
+            st.dataframe(country_df)
+        else:
+            st.write("No countries were extracted from the data.")
 else:
     st.info("📂 Please upload a file to begin analysis.")
