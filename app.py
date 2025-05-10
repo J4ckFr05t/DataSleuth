@@ -1,18 +1,11 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import plotly.express as px
-import seaborn as sns
+import altair as alt
 from itertools import combinations
 import re
-import streamlit.components.v1 as components
-import io
 import base64
-from collections import Counter
-import numpy as np
 import re
 import ahocorasick
-import matplotlib.ticker as mticker
 
 
 def simplify_dtype(dtype):
@@ -113,14 +106,15 @@ st.title("📊 DataSleuth - Smart EDA Viewer")
 # Table of contents using markdown
 st.sidebar.markdown("""
 # Table of Contents
+- [File Upload](#file-upload)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
-- [Correlation Analysis (Numerical Fields Only)](#correlation-analysis-numerical-fields-only)
 - [Pattern Detection](#pattern-detection)
 - [Country/Region Extraction Insights](#country-region-extraction-insights)
 """)
 
+st.markdown("## File Upload")
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
 # Toggle visibility of sidebar inputs using a checkbox
@@ -251,12 +245,24 @@ if uploaded_file:
             val_counts_total = df[col].value_counts().head(top_n)
             percent_total = (val_counts_total / total * 100).round(2)
 
-            fig, ax = plt.subplots(figsize=(8, 5))
-            sns.barplot(x=val_counts_total.values, y=shorten_labels(val_counts_total.index.tolist()), ax=ax, palette="Blues_d")
-            ax.set_title("Top 10 Values (All Records)")
-            ax.set_xlabel("Occurrences")
-            ax.set_ylabel(col)
-            st.pyplot(fig)
+            # Create a DataFrame for Altair
+            chart_df = pd.DataFrame({
+                col: val_counts_total.index.tolist(),
+                'Occurrences': val_counts_total.values
+            })
+
+            # Altair interactive bar chart
+            chart = alt.Chart(chart_df).mark_bar().encode(
+                x=alt.X('Occurrences:Q', title='Occurrences'),
+                y=alt.Y(f'{col}:N', sort='-x', title=col),
+                color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
+            ).properties(
+                width=600,
+                height=400,
+                title="Top 10 Values (All Records)"
+            )
+
+            st.altair_chart(chart, use_container_width=True)
 
             # Create a table showing values, counts, and percentages
             percent_table = pd.DataFrame({
@@ -282,13 +288,26 @@ if uploaded_file:
                     grouped_counts = temp_df[col].value_counts().head(top_n)
                     percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
 
+                    # Make sure grouped_counts is already computed correctly
+                    chart_df2 = pd.DataFrame({
+                        col: grouped_counts.index.tolist(),
+                        'Occurrences': grouped_counts.values
+                    })
+
+                    # Altair interactive bar chart
+                    chart2 = alt.Chart(chart_df2).mark_bar().encode(
+                        x=alt.X('Occurrences:Q', title='Occurrences'),
+                        y=alt.Y(f'{col}:N', sort='-x', title=col),
+                        color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='greens'))
+                    ).properties(
+                        width=600,
+                        height=400,
+                        title="Top 10 Values (Per Unique Primary Key)"
+                    )
+
                     st.markdown("#### Top Values (Per Primary Key)")
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    sns.barplot(x=grouped_counts.values, y=shorten_labels(grouped_counts.index.tolist()), ax=ax, palette="Greens_d")
-                    ax.set_title("Top 10 Values (Per Unique Primary Key)")
-                    ax.set_xlabel("Occurrences")
-                    ax.set_ylabel(col)
-                    st.pyplot(fig)
+                    st.altair_chart(chart2, use_container_width=True)
+
 
                     # Create a table showing per primary key values, counts, and percentages
                     percent_key_table = pd.DataFrame({
@@ -308,55 +327,25 @@ if uploaded_file:
                 except Exception as e:
                     st.error(f"⚠️ Error generating primary key-based chart: {e}")
             else:
-                st.info("ℹ️ No primary key selected or detected, so Chart B is skipped.")
+                st.info("ℹ️ No primary key selected or detected, so primary key based chart is skipped.")
 
         else:
-            fig, ax = plt.subplots(figsize=(6, 3))
-            sns.histplot(col_data, kde=True, color="teal", ax=ax)
-            ax.set_title("Distribution")
-            ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-            plt.tight_layout()
-            st.pyplot(fig)
+            chart_df = pd.DataFrame({col: col_data})
+
+            # Create histogram with Altair
+            hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                y=alt.Y('count()', title='Count')
+            ).properties(
+                width=600,
+                height=300,
+                title="Distribution"
+            )
+
+            st.altair_chart(hist, use_container_width=True)
 
         st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
 
-    st.markdown("## Correlation Analysis (Numerical Fields Only)")
-    st.subheader("🔗 Correlation Analysis (Numerical Fields Only)")
-    num_df = df.select_dtypes(include="number")
-
-    if num_df.shape[1] > 1:
-        corr_matrix = num_df.corr()
-        abs_corr = corr_matrix.abs()
-
-        upper = abs_corr.where(~np.tril(np.ones(abs_corr.shape)).astype(bool))
-        top_pairs = (
-            upper.stack()
-            .sort_values(ascending=False)
-            .reset_index()
-            .rename(columns={"level_0": "Feature 1", "level_1": "Feature 2", 0: "Correlation"})
-        )
-
-        st.markdown("### 🔝 Top 10 Strongest Correlations")
-        st.dataframe(top_pairs.head(10), use_container_width=True)
-
-        perfect_corr = top_pairs[top_pairs["Correlation"] == 1.0]
-        if not perfect_corr.empty:
-            st.warning(f"⚠️ Perfect correlations detected: {len(perfect_corr)} pairs. This suggests redundant features or multicollinearity.")
-
-        strong_corr_cols = abs_corr.columns[(abs_corr > 0.6).any()]
-        if len(strong_corr_cols) >= 2:
-            st.markdown("### 🔥 Heatmap of Strong Correlations (|corr| > 0.6)")
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(
-                corr_matrix.loc[strong_corr_cols, strong_corr_cols],
-                annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, square=True, cbar_kws={"shrink": .5}, ax=ax
-            )
-            ax.set_title("Strong Correlation Heatmap", fontsize=14)
-            st.pyplot(fig)
-        else:
-            st.info("No strong correlations (|corr| > 0.6) found between numerical fields.")
-    else:
-        st.info("Not enough numeric fields for correlation analysis.")
 
     st.markdown("## Pattern Detection")
     st.subheader("🔍 Pattern Detection")
