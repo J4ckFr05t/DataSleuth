@@ -106,6 +106,7 @@ st.markdown(dark_style, unsafe_allow_html=True)
 
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
+st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
     session_data = pickle.load(uploaded_session)
@@ -118,7 +119,7 @@ if uploaded_session:
 # Table of contents using markdown
 st.sidebar.markdown("""
 # Table of Contents
-- [File Upload](#file-upload)
+- [Upload New File](#upload-new-file)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
@@ -126,7 +127,7 @@ st.sidebar.markdown("""
 - [Country/Region Extraction Insights](#country-region-extraction-insights)
 """)
 
-st.markdown("## File Upload")
+st.markdown("## Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
 # Toggle visibility of sidebar inputs using a checkbox
