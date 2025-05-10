@@ -4,7 +4,6 @@ import altair as alt
 from itertools import combinations
 import re
 import base64
-import re
 import ahocorasick
 
 
