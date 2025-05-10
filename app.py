@@ -109,6 +109,17 @@ st.markdown(dark_style, unsafe_allow_html=True)
 
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
+# Table of contents using markdown
+st.sidebar.markdown("""
+# Table of Contents
+- [Field-wise Summary](#field-wise-summary)
+- [Primary Key Identification](#primary-key-identification)
+- [Per Field Insights](#per-field-insights)
+- [Correlation Analysis (Numerical Fields Only)](#correlation-analysis-numerical-fields-only)
+- [Pattern Detection](#pattern-detection)
+- [Country/Region Extraction Insights](#country-region-extraction-insights)
+""")
+
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
 # Toggle visibility of sidebar inputs using a checkbox
@@ -141,6 +152,7 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
     st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
 
+    st.markdown("## Field-wise Summary")
     st.subheader("🧾 Field-wise Summary")
     summaries = []
     for col in df.columns:
@@ -163,6 +175,7 @@ if uploaded_file:
         html = summary_df.to_html(index=False)
         st.download_button("📄 Download as Confluence-compatible HTML", data=html, file_name="eda_summary.html", mime="text/html")
 
+    st.markdown("## Primary Key Identification")
     st.subheader("🗝️ Primary Key Identification")
 
     # Step 1: Auto-detect single-column primary keys
@@ -214,6 +227,7 @@ if uploaded_file:
         st.info(f"🔢 Total Records: **{total_records}**  🔑 Primary key not selected.")
 
 
+    st.markdown("## Per Field Insights")
     st.subheader("📌 Per Field Insights")
     for col in df.columns:
         st.markdown(f"### 🧬 {col}")
@@ -253,6 +267,8 @@ if uploaded_file:
             # Add total count to the table
             percent_table = pd.concat([percent_table, pd.DataFrame([["Total", total, "100"]], columns=percent_table.columns)], ignore_index=True)
 
+            percent_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
+
             st.markdown("### 📊 Value Counts and Percentages")
             st.dataframe(percent_table, use_container_width=True)
 
@@ -283,6 +299,8 @@ if uploaded_file:
                     # Add total count to the table
                     percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
 
+                    percent_key_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
+
                     st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
                     st.dataframe(percent_key_table, use_container_width=True)
 
@@ -301,6 +319,7 @@ if uploaded_file:
 
         st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
 
+    st.markdown("## Correlation Analysis (Numerical Fields Only)")
     st.subheader("🔗 Correlation Analysis (Numerical Fields Only)")
     num_df = df.select_dtypes(include="number")
 
@@ -338,6 +357,7 @@ if uploaded_file:
     else:
         st.info("Not enough numeric fields for correlation analysis.")
 
+    st.markdown("## Pattern Detection")
     st.subheader("🔍 Pattern Detection")
     st.markdown("""
     Each value is scanned for **known formats** like IP, MAC, Email, FQDN. 
@@ -391,55 +411,50 @@ if uploaded_file:
     if sidebar_visible:
         # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
 
+        st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
-        extraction_summary = {}
-
-        # Collecting all country data for the summary table
-        country_data = []
+        summary_data = []
 
         # Get the total number of records in the DataFrame
         total_records = len(df)
 
-        # Loop over each column that contains object or string types
         for col in df.select_dtypes(include=['object', 'string']).columns:
-            # Get the non-null values
             non_null_values = df[col].dropna()
-            
-            # Use all the non-null records
-            sampled_values = non_null_values  # No sampling, use all non-null records
-            
-            # Apply the extraction function to each non-null value
+            sampled_values = non_null_values  # No sampling
+            records_processed = len(sampled_values)
+
+            # Apply extraction
             results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
 
-            country_samples = {}
+            country_counts = {}
+            country_evidence = {}
 
             for val, res in results:
                 for c in res['countries']:
-                    if c not in country_samples:
-                        country_samples[c] = val  # first occurrence
+                    country_counts[c] = country_counts.get(c, 0) + 1
+                    if c not in country_evidence:
+                        country_evidence[c] = val  # first evidence sample
 
-            # Store the country data in a summary format
-            for country, sample in country_samples.items():
-                count = results[results.apply(lambda x: country in x[1]['countries'])].shape[0]
-                percentage = (count / total_records) * 100  # Calculate the percentage
+            if country_counts:
+                total_country_mentions = sum(country_counts.values())
+                coverage_percentage = (total_country_mentions / total_records) * 100
 
-                country_data.append({
+                summary_data.append({
                     'Field': col,
-                    'Country': country,
-                    'Count': count,
-                    'Percentage': f"{percentage:.2f}%",  # Show percentage with 2 decimal places
-                    'Sample': sample,
-                    'Records Processed': len(sampled_values)  # Number of records sampled from the column
+                    'Countries Found': ', '.join(sorted(country_counts.keys())),
+                    'Coverage': f"{total_country_mentions} ({coverage_percentage:.2f}%)",
+                    'Evidence': [country_evidence[c] for c in sorted(country_counts.keys())],
+                    'Records Processed': records_processed
                 })
 
-        # Create a DataFrame to display the country extraction summary
-        country_df = pd.DataFrame(country_data)
+        summary_df = pd.DataFrame(summary_data)
 
-        # Display the consolidated summary table
-        if not country_df.empty:
-            st.write("### Country Extraction Summary")
-            st.dataframe(country_df)
+        # Show the summary
+        if not summary_df.empty:
+            st.write("### Country Extraction Summary by Column")
+            st.dataframe(summary_df)
         else:
             st.write("No countries were extracted from the data.")
+
 else:
     st.info("📂 Please upload a file to begin analysis.")
