@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import plotly.express as px
 import seaborn as sns
 from itertools import combinations
 import re
@@ -246,7 +247,7 @@ if uploaded_file:
         elif not is_numeric:
             top_n = 10
 
-            st.markdown("#### Chart A: Top Values (All Rows)")
+            st.markdown("#### Top Values (All Rows)")
             val_counts_total = df[col].value_counts().head(top_n)
             percent_total = (val_counts_total / total * 100).round(2)
 
@@ -281,7 +282,7 @@ if uploaded_file:
                     grouped_counts = temp_df[col].value_counts().head(top_n)
                     percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
 
-                    st.markdown("#### Chart B: Top Values (Per Primary Key)")
+                    st.markdown("#### Top Values (Per Primary Key)")
                     fig, ax = plt.subplots(figsize=(8, 5))
                     sns.barplot(x=grouped_counts.values, y=shorten_labels(grouped_counts.index.tolist()), ax=ax, palette="Greens_d")
                     ax.set_title("Top 10 Values (Per Unique Primary Key)")
