@@ -17,3 +17,6 @@ venv/
 # System files
 .DS_Store
 Thumbs.db
+
+#Others
+EDA_Reports/

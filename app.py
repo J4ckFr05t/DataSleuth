@@ -5,6 +5,10 @@ from itertools import combinations
 import re
 import base64
 import ahocorasick
+import pickle
+from io import BytesIO
+import os
+from datetime import datetime
 
 
 def simplify_dtype(dtype):
@@ -102,6 +106,15 @@ st.markdown(dark_style, unsafe_allow_html=True)
 
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
+uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
+if uploaded_session:
+    session_data = pickle.load(uploaded_session)
+    df = session_data["dataframe"]
+    primary_keys = session_data["primary_keys"]
+    countries_input = session_data["countries_input"]
+    regions_input = session_data["regions_input"]
+    st.success("✅ Session loaded successfully! Continue exploring below.")
+
 # Table of contents using markdown
 st.sidebar.markdown("""
 # Table of Contents
@@ -142,10 +155,19 @@ if sidebar_visible:
 else:
     st.sidebar.write("Sidebar content is hidden.")
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
     st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
+elif "df" in locals():
+    st.info("ℹ️ Using data loaded from session file.")
+else:
+    df = None
+    st.info("📂 Please upload a file to begin analysis.")
 
+if df is not None:
     st.markdown("## Field-wise Summary")
     st.subheader("🧾 Field-wise Summary")
     summaries = []
@@ -445,5 +467,29 @@ if uploaded_file:
         else:
             st.write("No countries were extracted from the data.")
 
-else:
-    st.info("📂 Please upload a file to begin analysis.")
+if st.button("💾 Save Session"):
+    if 'df' in locals() and df is not None:
+        session_data = {
+            "dataframe": df,
+            "primary_keys": primary_keys,
+            "countries_input": countries_input,
+            "regions_input": regions_input
+        }
+
+        # Prepare save directory
+        save_dir = "EDA_Reports"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Build filename: <original_filename>_<timestamp>.pkl
+        original_filename = uploaded_file.name.rsplit('.', 1)[0] if uploaded_file else "session"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_filename = f"{original_filename}_{timestamp}.pkl"
+        save_path = os.path.join(save_dir, full_filename)
+
+        # Save to file
+        with open(save_path, "wb") as f:
+            pickle.dump(session_data, f)
+
+        st.success(f"✅ Session saved to `{save_path}`")
+    else:
+        st.warning("⚠️ No dataframe available to save.")
