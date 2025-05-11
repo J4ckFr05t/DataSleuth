@@ -328,6 +328,70 @@ if df is not None:
                 value_counts = value_counts.sort_values("Count", ascending=False)
                 st.dataframe(value_counts, use_container_width=True)
         elif not is_numeric:
+            try:
+                # Try parsing as datetime
+                parsed_col = pd.to_datetime(col_data, errors="coerce", infer_datetime_format=True)
+                if parsed_col.notna().sum() == 0 and pd.api.types.is_numeric_dtype(col_data):
+                    parsed_col = pd.to_datetime(col_data, errors="coerce", unit="ms")
+                    if parsed_col.notna().sum() == 0:
+                        parsed_col = pd.to_datetime(col_data, errors="coerce", unit="s")
+
+                if parsed_col.notna().sum() > 0:
+                    st.markdown("#### 📈 Trend (Date/Time Field)")
+
+                    temp_df = df.copy()
+                    temp_df['__datetime__'] = parsed_col
+                    temp_df = temp_df.dropna(subset=['__datetime__'])
+
+                    # UI: frequency selection
+                    freq = st.selectbox(
+                        f"Choose trend resolution for `{col}`",
+                        options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
+                        index=0,
+                        key=f"freq_{col}"
+                    )
+
+                    freq_map = {
+                        "Daily": "D",
+                        "Weekly": "W",
+                        "Monthly": "M",
+                        "Quarterly": "Q",
+                        "Yearly": "Y"
+                    }
+
+                    # UI: date range picker
+                    min_date = parsed_col.min().date()
+                    max_date = parsed_col.max().date()
+                    start_date, end_date = st.date_input(
+                        f"Select date range for `{col}`",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                        key=f"range_{col}"
+                    )
+
+                    # Filter and resample
+                    filtered_df = temp_df[
+                        (temp_df['__datetime__'].dt.date >= start_date) &
+                        (temp_df['__datetime__'].dt.date <= end_date)
+                    ].copy()
+
+                    resampled = filtered_df.set_index("__datetime__").resample(freq_map[freq])
+
+                    record_counts = resampled.size().rename("Total Records")
+                    chart_df = pd.DataFrame(record_counts)
+
+                    if primary_keys:
+                        unique_keys_df = filtered_df.drop_duplicates(subset=primary_keys)
+                        unique_counts = unique_keys_df.set_index("__datetime__").resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                        chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
+
+                    st.line_chart(chart_df)
+                    st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
+                    continue  # Skip to next column
+            except Exception:
+                pass
+
             avg_str_len = col_data.astype(str).apply(len).mean()
 
             if avg_str_len > 50:
@@ -372,7 +436,6 @@ if df is not None:
                     )
 
                     st.altair_chart(chart, use_container_width=True)
-
             else:
                 top_n = 10
 
@@ -463,7 +526,6 @@ if df is not None:
                     st.error(f"⚠️ Error generating primary key-based chart: {e}")
             else:
                 st.info("ℹ️ No primary key selected or detected, so primary key based chart is skipped.")
-
         else:
             chart_df = pd.DataFrame({col: col_data})
 
