@@ -70,7 +70,7 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 2. **Run the container**:
 
    ```bash
-   docker run -p 8501:8501 datasleuth
+   docker run -d -p 8501:8501 datasleuth
    ```
 
    Now visit: [http://localhost:8501](http://localhost:8501)
@@ -78,7 +78,7 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 > **Note**: You can mount a volume for file persistence if you want to save sessions:
 >
 > ```bash
-> docker run -p 8501:8501 -v $PWD/EDA_Reports:/app/EDA_Reports datasleuth
+> docker run -d -p 8501:8501 -v $PWD/EDA_Reports:/app/EDA_Reports datasleuth
 > ```
 
 ---
