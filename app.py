@@ -195,7 +195,7 @@ if sidebar_visible:
                             "automaton": automaton
                         }
                         st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
-                        st.rerun()  # 💡 Forces full rerun so TOC updates
+                        st.rerun()  # Updated from experimental_rerun
                 else:
                     st.error("❌ Please enter both a category name and at least one keyword.")
 
@@ -217,7 +217,7 @@ if sidebar_visible:
                 if st.button(f"❌ Delete `{cat_name}`", key=f"delete_{cat_name}"):
                     del st.session_state.custom_categories[cat_name]
                     st.warning(f"🗑️ Deleted category `{cat_name}`")
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 else:
@@ -236,6 +236,115 @@ else:
     st.info("📂 Please upload a file to begin analysis.")
 
 if df is not None:
+    # Add Data Filtering Section in sidebar
+    if sidebar_visible:
+        st.sidebar.markdown("---")  # Add a separator
+        st.sidebar.markdown("### 🔍 Data Filters")
+        
+        # Initialize session state for filters if not exists
+        if 'active_filters' not in st.session_state:
+            st.session_state.active_filters = {}
+        if 'filtered_data' not in st.session_state:
+            st.session_state.filtered_data = None
+        
+        # Create a form for filter selections
+        with st.sidebar.form(key="filter_form"):
+            st.markdown("### 🔍 Data Filters")
+            
+            # Field selection for filtering
+            filter_fields = st.multiselect(
+                "Select fields to filter on",
+                options=df.columns.tolist(),
+                key="filter_fields"
+            )
+            
+            # Dictionary to store filter selections
+            filter_selections = {}
+            
+            # Create filter widgets for each selected field
+            for field in filter_fields:
+                try:
+                    # Get available values from the original dataframe
+                    non_null_mask = df[field].notna()
+                    available_values = df.loc[non_null_mask, field].astype(str)
+                    available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
+                    available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
+                    
+                    # Get current selected values for this field
+                    current_selected = [v for v in st.session_state.active_filters.get(field, []) if str(v) in available_values]
+                    
+                    # Create a multi-select widget for each field
+                    selected_values = st.multiselect(
+                        f"Filter {field}",
+                        options=available_values,
+                        default=current_selected,
+                        key=f"filter_{field}"
+                    )
+                    
+                    if selected_values:
+                        filter_selections[field] = selected_values
+                        
+                except Exception as e:
+                    st.error(f"Error processing field {field}: {str(e)}")
+                    continue
+            
+            # Add form submit and clear buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                apply_filters = st.form_submit_button("Apply Filters")
+            with col2:
+                clear_filters = st.form_submit_button("Clear All Filters")
+        
+        # Handle form submission
+        if apply_filters:
+            if filter_selections:
+                filtered_df = df.copy()
+                for field, values in filter_selections.items():
+                    try:
+                        non_null_mask = filtered_df[field].notna()
+                        filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
+                        mask = filtered_df[field].isin([str(v) for v in values])
+                        filtered_df = filtered_df[mask]
+                    except Exception as e:
+                        st.error(f"Error filtering field {field}: {str(e)}")
+                        continue
+                
+                # Update the filtered data and active filters
+                st.session_state.filtered_data = filtered_df
+                st.session_state.active_filters = filter_selections
+            else:
+                st.session_state.filtered_data = None
+                st.session_state.active_filters = {}
+            st.rerun()
+        
+        elif clear_filters:
+            st.session_state.active_filters = {}
+            st.session_state.filtered_data = None
+            st.rerun()
+        
+        # Show active filters if any
+        if st.session_state.active_filters:
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("#### Active Filters:")
+            for field, values in st.session_state.active_filters.items():
+                try:
+                    display_values = []
+                    for v in values:
+                        try:
+                            if pd.isna(v):
+                                continue
+                            display_values.append(str(v))
+                        except:
+                            continue
+                    if display_values:
+                        st.sidebar.markdown(f"- **{field}**: {', '.join(display_values)}")
+                except Exception as e:
+                    st.sidebar.error(f"Error displaying filter for {field}")
+        
+        # Use filtered data if available
+        if st.session_state.filtered_data is not None:
+            df = st.session_state.filtered_data
+
     st.markdown("## Field-wise Summary")
     st.subheader("🧾 Field-wise Summary")
     summaries = []
@@ -317,7 +426,13 @@ if df is not None:
         st.markdown(f"### 🧬 {col}")
         col_data = df[col].dropna()
         total = len(df)
-        coverage = 100 - (df[col].isnull().sum() / total * 100)
+        # Calculate coverage percentage safely
+        coverage = 100 - (df[col].isnull().sum() / len(df) * 100)
+        # Ensure coverage is a valid number between 0 and 100
+        coverage = max(0, min(100, float(coverage) if pd.notna(coverage) else 0))
+        
+        # Use the safe coverage value for the progress bar
+        st.progress(coverage/100, text=f"Coverage: {coverage:.2f}%")
         nunique = col_data.nunique()
         is_numeric = pd.api.types.is_numeric_dtype(col_data)
 
@@ -559,41 +674,60 @@ if df is not None:
     all_pattern_info = []
 
     for col in df.columns:
-        col_data = df[col].dropna().astype(str)
-        patterns = col_data.apply(detect_pattern)
+        try:
+            col_data = df[col].dropna().astype(str)
+            if len(col_data) == 0:  # Skip if no data after filtering
+                continue
+                
+            patterns = col_data.apply(detect_pattern)
 
-        # Count pattern frequencies
-        pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
-        total = pattern_counts.sum()
+            # Count pattern frequencies
+            pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
+            total = pattern_counts.sum()
 
-        pattern_info = []
-        for pat, count in pattern_counts.items():
-            example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
-            confidence = round((count / total) * 100, 2)
-            pattern_info.append({
-                "Field": col,
-                "Pattern": pat,
-                "Example": example if example else "",
-                "Confidence (%)": confidence
-            })
+            if total == 0:  # Skip if no patterns found
+                continue
 
-        all_pattern_info.extend(pattern_info)
+            pattern_info = []
+            for pat, count in pattern_counts.items():
+                example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
+                confidence = round((count / total) * 100, 2)
+                pattern_info.append({
+                    "Field": col,
+                    "Pattern": pat,
+                    "Example": example if example else "",
+                    "Confidence (%)": confidence
+                })
+
+            all_pattern_info.extend(pattern_info)
+        except Exception as e:
+            st.error(f"Error processing patterns for field {col}: {str(e)}")
+            continue
 
     pattern_df = pd.DataFrame(all_pattern_info)
 
-    st.markdown("### 📋 Detailed Pattern Report")
-    st.dataframe(pattern_df, use_container_width=True)
+    if not pattern_df.empty:
+        st.markdown("### 📋 Detailed Pattern Report")
+        st.dataframe(pattern_df, use_container_width=True)
 
-    st.markdown("### 🌟 Most Common Pattern Per Field")
-    top_patterns = pattern_df.sort_values('Confidence (%)', ascending=False).drop_duplicates('Field')
-    st.dataframe(top_patterns[['Field', 'Pattern', 'Example', 'Confidence (%)']], use_container_width=True)
+        st.markdown("### 🌟 Most Common Pattern Per Field")
+        try:
+            top_patterns = pattern_df.sort_values('Confidence (%)', ascending=False).drop_duplicates('Field')
+            st.dataframe(top_patterns[['Field', 'Pattern', 'Example', 'Confidence (%)']], use_container_width=True)
+        except Exception as e:
+            st.error("Error generating most common patterns. No patterns found in the filtered data.")
+    else:
+        st.info("No patterns detected in the current data. Try adjusting your filters or check if the data contains any patterns.")
 
     with st.expander("📤 Export Pattern Detection Results"):
-        csv = pattern_df.to_csv(index=False).encode()
-        st.download_button("⬇️ Download CSV", data=csv, file_name="all_patterns.csv", mime="text/csv")
+        if not pattern_df.empty:
+            csv = pattern_df.to_csv(index=False).encode()
+            st.download_button("⬇️ Download CSV", data=csv, file_name="all_patterns.csv", mime="text/csv")
 
-        html = pattern_df.to_html(index=False)
-        st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
+            html = pattern_df.to_html(index=False)
+            st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
+        else:
+            st.info("No patterns to export.")
 
     if sidebar_visible:
         # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
