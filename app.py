@@ -114,10 +114,21 @@ if uploaded_session:
     primary_keys = session_data["primary_keys"]
     countries_input = session_data["countries_input"]
     regions_input = session_data["regions_input"]
+
+    # Restore custom categories if present
+    if "custom_categories" in session_data:
+        st.session_state.custom_categories = {}
+        for cat, keywords in session_data["custom_categories"].items():
+            automaton = build_automaton(keywords)
+            st.session_state.custom_categories[cat] = {
+                "keywords": keywords,
+                "automaton": automaton
+            }
+
     st.success("✅ Session loaded successfully! Continue exploring below.")
 
-# Table of contents using markdown
-st.sidebar.markdown("""
+# --- Dynamic Table of Contents ---
+toc = """
 # Table of Contents
 - [Upload New File](#upload-new-file)
 - [Field-wise Summary](#field-wise-summary)
@@ -125,7 +136,13 @@ st.sidebar.markdown("""
 - [Per Field Insights](#per-field-insights)
 - [Pattern Detection](#pattern-detection)
 - [Country/Region Extraction Insights](#country-region-extraction-insights)
-""")
+"""
+
+# Append custom categories to the TOC if present
+if "custom_categories" in st.session_state and st.session_state.custom_categories:
+    toc += "\n- [Custom Extraction Insights](#custom-extraction-insights)"
+
+st.sidebar.markdown(toc)
 
 st.markdown("## Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
@@ -153,6 +170,54 @@ if sidebar_visible:
     # Build automatons once
     COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
     REGION_AUTOMATON = build_automaton(REGION_LIST)
+
+    with st.sidebar.expander("➕ Add Custom Extraction Categories"):
+        with st.form(key="custom_extraction_form"):
+            custom_category = st.text_input("Category Name (e.g., Product, Company)", key="category_input")
+            custom_keywords_input = st.text_area("Keywords (comma separated)", key="keywords_input")
+            submitted = st.form_submit_button("Add Custom Category")
+
+            if submitted:
+                if custom_category and custom_keywords_input:
+                    if "custom_categories" not in st.session_state:
+                        st.session_state.custom_categories = {}
+
+                    # Prevent duplicate category overwrite unless intentional
+                    if custom_category in st.session_state.custom_categories:
+                        st.warning(f"⚠️ Category '{custom_category}' already exists. Choose another name.")
+                    else:
+                        keywords = [kw.strip() for kw in custom_keywords_input.split(",") if kw.strip()]
+                        automaton = build_automaton(keywords)
+                        st.session_state.custom_categories[custom_category] = {
+                            "keywords": keywords,
+                            "automaton": automaton
+                        }
+                        st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
+                        st.rerun()  # 💡 Forces full rerun so TOC updates
+                else:
+                    st.error("❌ Please enter both a category name and at least one keyword.")
+
+    if "custom_categories" in st.session_state and st.session_state.custom_categories:
+        st.markdown("### 🗂️ Current Custom Categories")
+
+        for cat_name, meta in st.session_state.custom_categories.items():
+            with st.expander(f"🔧 `{cat_name}` ({len(meta['keywords'])} keywords)"):
+                st.write(", ".join(meta["keywords"]))
+
+                # Optional: edit or delete
+                new_keywords = st.text_area(f"✏️ Edit keywords for `{cat_name}`", value=", ".join(meta["keywords"]), key=f"edit_{cat_name}")
+                if st.button(f"Update `{cat_name}`", key=f"update_{cat_name}"):
+                    new_kw_list = [kw.strip() for kw in new_keywords.split(",") if kw.strip()]
+                    st.session_state.custom_categories[cat_name]["keywords"] = new_kw_list
+                    st.session_state.custom_categories[cat_name]["automaton"] = build_automaton(new_kw_list)
+                    st.success(f"✅ Updated keywords for `{cat_name}`")
+
+                if st.button(f"❌ Delete `{cat_name}`", key=f"delete_{cat_name}"):
+                    del st.session_state.custom_categories[cat_name]
+                    st.warning(f"🗑️ Deleted category `{cat_name}`")
+                    st.experimental_rerun()
+
+
 else:
     st.sidebar.write("Sidebar content is hidden.")
 
@@ -468,13 +533,65 @@ if df is not None:
         else:
             st.write("No countries were extracted from the data.")
 
+    # --- Custom Extraction Summary (Structured like Country/Region) ---
+    if "custom_categories" in st.session_state and df is not None:
+        st.markdown("## 🧠 Custom Extraction Insights")
+
+        total_records = len(df)
+
+        for category_name, meta in st.session_state.custom_categories.items():
+            automaton = meta["automaton"]
+            summary_data = []
+
+            st.subheader(f"🔍 Extraction Summary for `{category_name}`")
+
+            for col in df.select_dtypes(include=["object", "string"]).columns:
+                non_null_values = df[col].dropna()
+                sampled_values = non_null_values  # can sample here if needed
+                records_processed = len(sampled_values)
+
+                results = sampled_values.apply(lambda x: (x, list({match for _, (_, match) in automaton.iter(x.lower())})))
+
+                match_counts = {}
+                match_evidence = {}
+
+                for val, matches in results:
+                    for m in matches:
+                        match_counts[m] = match_counts.get(m, 0) + 1
+                        if m not in match_evidence:
+                            match_evidence[m] = val  # first evidence
+
+                if match_counts:
+                    total_mentions = sum(match_counts.values())
+                    coverage_percentage = (total_mentions / total_records) * 100
+
+                    summary_data.append({
+                        "Field": col,
+                        f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
+                        "Coverage": f"{total_mentions} ({coverage_percentage:.2f}%)",
+                        "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
+                        "Records Processed": records_processed
+                    })
+
+            summary_df = pd.DataFrame(summary_data)
+
+            if not summary_df.empty:
+                st.markdown(f"### Summary Table for `{category_name}`")
+                st.dataframe(summary_df)
+            else:
+                st.info(f"No `{category_name}` matches found.")
+
+
 if st.button("💾 Save Session"):
     if 'df' in locals() and df is not None:
         session_data = {
             "dataframe": df,
             "primary_keys": primary_keys,
             "countries_input": countries_input,
-            "regions_input": regions_input
+            "regions_input": regions_input,
+            "custom_categories": {
+                cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
+            }
         }
 
         # Prepare save directory
