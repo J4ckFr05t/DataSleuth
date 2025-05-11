@@ -51,12 +51,6 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
    pip install -r requirements.txt
    ```
 
-   If `requirements.txt` is missing, install manually:
-
-   ```bash
-   pip install streamlit pandas altair wordcloud matplotlib ahocorasick
-   ```
-
 4. **Run the app**:
 
    ```bash
@@ -98,17 +92,6 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 ├── README.md         # You're here
 └── requirements.txt  # Python dependencies (create if missing)
 ```
-
----
-
-## 📝 Creating `requirements.txt` (Optional)
-
-If you'd like to generate a `requirements.txt`, run:
-
-```bash
-pip freeze > requirements.txt
-```
-
 ---
 
 ## 🤝 Contributing
