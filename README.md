@@ -1,117 +1,122 @@
-# 🧠 DataSleuth: Smart EDA Viewer
+# 📊 DataSleuth – Smart EDA Viewer
 
-DataSleuth is a powerful, user-friendly Exploratory Data Analysis (EDA) tool built with Streamlit. It helps you explore large CSV/Excel files with:
-- Field-wise summaries
-- Value distribution charts
-- Pattern detection (e.g., IP, email, Aa9-style formats)
-- Primary key checks
-- Country/region entity recognition
-- Exportable results for Confluence or CSV
-- Docker support for easy deployment
+DataSleuth is a powerful, interactive Streamlit-based application for performing intelligent Exploratory Data Analysis (EDA) on CSV and Excel datasets. It supports primary key detection, field-wise summaries, trend analysis, pattern recognition, keyword extraction, and more.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Features
 
-### 1. Clone the repo
+- 📂 Load sessions and upload CSV/XLSX files  
+- 🧾 Field summaries with null/unique insights  
+- 🔎 Primary key detection and validation  
+- 📈 Trend charts for date/datetime fields  
+- ☁️ Word clouds and value distribution visualizations  
+- 🌍 Country/Region and custom keyword extraction  
+- 🔍 Pattern detection with symbolic abstraction  
+- 💾 Save and restore session states  
+- ✅ Dynamic filtering and sidebar controls
 
-```bash
-git clone https://github.com/J4ckFr05t/DataSleuth.git
-cd DataSleuth
+---
+
+## 📦 Requirements
+
+### Local Setup
+- Python 3.8+
+- pip
+
+### Docker Setup
+- Docker Engine (v20+ recommended)
+
+---
+
+## 🛠️ Local Installation
+
+1. **Clone the repository**:
+
+   ```bash
+   git clone https://github.com/your-username/datasleuth.git
+   cd datasleuth
+   ```
+
+2. **Create a virtual environment** _(optional but recommended)_:
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+   If `requirements.txt` is missing, install manually:
+
+   ```bash
+   pip install streamlit pandas altair wordcloud matplotlib ahocorasick
+   ```
+
+4. **Run the app**:
+
+   ```bash
+   streamlit run app.py
+   ```
+
+---
+
+## 🐳 Docker Setup
+
+1. **Build the Docker image**:
+
+   ```bash
+   docker build -t datasleuth .
+   ```
+
+2. **Run the container**:
+
+   ```bash
+   docker run -p 8501:8501 datasleuth
+   ```
+
+   Now visit: [http://localhost:8501](http://localhost:8501)
+
+> **Note**: You can mount a volume for file persistence if you want to save sessions:
+>
+> ```bash
+> docker run -p 8501:8501 -v $PWD/EDA_Reports:/app/EDA_Reports datasleuth
+> ```
+
+---
+
+## 📁 File Structure
+
 ```
-
-### 2. Create a virtual environment (optional but recommended)
-
-```bash
-python -m venv venv
-source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Run the app
-
-```bash
-streamlit run app.py
+.
+├── app.py            # Main Streamlit application
+├── Dockerfile        # Docker build instructions
+├── README.md         # You're here
+└── requirements.txt  # Python dependencies (create if missing)
 ```
 
 ---
 
-## 🐳 Run with Docker
+## 📝 Creating `requirements.txt` (Optional)
 
-### 1. Build the Docker image
-
-```bash
-docker build -t datasleuth .
-```
-
-### 2. Run the container
+If you'd like to generate a `requirements.txt`, run:
 
 ```bash
-docker run -p 8501:8501 datasleuth
+pip freeze > requirements.txt
 ```
-
-Then visit [http://localhost:8501](http://localhost:8501) in your browser.
-
----
-
-## ⚙️ Configuration
-
-The `.streamlit/config.toml` file controls Streamlit behavior like:
-- Max file upload size
-
-### Example: Enable dark mode and increase upload size
-
-```toml
-[server]
-maxUploadSize = 200
-```
-
-> 💡 Max file size is in **MB**. Adjust `maxUploadSize` based on your dataset size.
-
----
-
-## 📦 Export Features
-
-You can export:
-- Field summaries as CSV
-- Confluence-compatible HTML
-- Pattern detection results
-
----
-
-## 🧠 Pattern Detection
-
-DataSleuth auto-detects:
-- Known formats: IP address, MAC, email, DNS, FQDN, phone numbers
-- Abstract patterns: e.g., `Aa9@-` where:
-  - `A` = Uppercase letter  
-  - `a` = Lowercase letter  
-  - `9` = Digit  
-  - `@#-` = Special characters  
-- Fields are **flagged** if fewer than **80%** of values follow the dominant pattern
-
----
-
-## ✨ Example Output
-
-- Interactive summary tables
-- Bar charts for top values
-- Histogram for numeric distributions
-- Detected patterns per column with export
 
 ---
 
 ## 🤝 Contributing
 
-Feel free to fork and improve! PRs welcome.
+Pull requests and issues are welcome. If you'd like to contribute features like authentication, database support, or more visualizations, feel free to fork the project!
 
 ---
 
 ## 🛡️ License
 
-MIT License
+MIT License. Feel free to use and modify.
