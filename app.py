@@ -9,6 +9,8 @@ import pickle
 from io import BytesIO
 import os
 from datetime import datetime
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
 
 def simplify_dtype(dtype):
@@ -326,30 +328,76 @@ if df is not None:
                 value_counts = value_counts.sort_values("Count", ascending=False)
                 st.dataframe(value_counts, use_container_width=True)
         elif not is_numeric:
-            top_n = 10
+            avg_str_len = col_data.astype(str).apply(len).mean()
 
-            st.markdown("#### Top Values (All Rows)")
-            val_counts_total = df[col].value_counts().head(top_n)
-            percent_total = (val_counts_total / total * 100).round(2)
+            if avg_str_len > 50:
+                st.markdown("#### ☁️ Word Cloud (Long Text Field)")
 
-            # Create a DataFrame for Altair
-            chart_df = pd.DataFrame({
-                col: val_counts_total.index.tolist(),
-                'Occurrences': val_counts_total.values
-            })
+                # Pre-filter to only include meaningful values
+                filtered_values = col_data.dropna().astype(str).tolist()
+                filtered_values = [val for val in filtered_values if any(c.isalpha() for c in val)]
+                text = ' '.join(filtered_values).strip()
 
-            # Altair interactive bar chart
-            chart = alt.Chart(chart_df).mark_bar().encode(
-                x=alt.X('Occurrences:Q', title='Occurrences'),
-                y=alt.Y(f'{col}:N', sort='-x', title=col),
-                color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
-            ).properties(
-                width=600,
-                height=400,
-                title="Top 10 Values (All Records)"
-            )
+                try:
+                    if text:
+                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(text)
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        fig.patch.set_alpha(0)  # 🔥 Removes the white border
+                        ax.imshow(wordcloud, interpolation='bilinear')
+                        ax.axis("off")
+                        st.pyplot(fig)
+                    else:
+                        raise ValueError("No valid words")
+                except Exception as e:
+                    st.warning("⚠️ Word cloud not generated due to non-textual content. Falling back to bar chart.")
 
-            st.altair_chart(chart, use_container_width=True)
+                    # Fall back to bar chart
+                    top_n = 10
+                    val_counts_total = df[col].value_counts().head(top_n)
+                    percent_total = (val_counts_total / total * 100).round(2)
+
+                    chart_df = pd.DataFrame({
+                        col: val_counts_total.index.tolist(),
+                        'Occurrences': val_counts_total.values
+                    })
+
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('Occurrences:Q', title='Occurrences'),
+                        y=alt.Y(f'{col}:N', sort='-x', title=col),
+                        color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
+                    ).properties(
+                        width=600,
+                        height=400,
+                        title="Top 10 Values (All Records)"
+                    )
+
+                    st.altair_chart(chart, use_container_width=True)
+
+            else:
+                top_n = 10
+
+                st.markdown("#### Top Values (All Rows)")
+                val_counts_total = df[col].value_counts().head(top_n)
+                percent_total = (val_counts_total / total * 100).round(2)
+
+                # Create a DataFrame for Altair
+                chart_df = pd.DataFrame({
+                    col: val_counts_total.index.tolist(),
+                    'Occurrences': val_counts_total.values
+                })
+
+                # Altair interactive bar chart
+                chart = alt.Chart(chart_df).mark_bar().encode(
+                    x=alt.X('Occurrences:Q', title='Occurrences'),
+                    y=alt.Y(f'{col}:N', sort='-x', title=col),
+                    color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
+                ).properties(
+                    width=600,
+                    height=400,
+                    title="Top 10 Values (All Records)"
+                )
+
+                st.altair_chart(chart, use_container_width=True)
 
             # Create a table showing values, counts, and percentages
             percent_table = pd.DataFrame({
