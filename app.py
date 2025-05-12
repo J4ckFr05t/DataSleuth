@@ -88,6 +88,24 @@ def shorten_labels(labels, max_len=50):
     """Shortens labels to a maximum length, reserving space for '...'."""
     return [label if len(label) <= max_len else label[:max_len - 3] + '...' for label in labels]
 
+def create_bar_chart(df, x_col, y_col, title, color_scheme='blues'):
+    """Helper function to create consistent bar charts with proper label handling"""
+    # Shorten labels if needed
+    df[y_col] = shorten_labels(df[y_col].astype(str))
+    
+    chart = alt.Chart(df).mark_bar().encode(
+        x=alt.X(f'{x_col}:Q', title=x_col),
+        y=alt.Y(f'{y_col}:N', 
+                sort='-x', 
+                title=y_col,
+                axis=alt.Axis(labelLimit=0)),  # This ensures labels are not truncated
+        color=alt.Color(f'{x_col}:Q', scale=alt.Scale(scheme=color_scheme))
+    ).properties(
+        width=600,
+        height=max(400, len(df) * 25),  # Dynamic height based on number of bars
+        title=title
+    )
+    return chart
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
@@ -158,7 +176,7 @@ if sidebar_visible:
 
     countries_input = st.sidebar.text_area(
         "Country List (comma separated)",
-        value="India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People’s Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People’s Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia"
+        value="India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People's Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People's Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia"
     )
     
     regions_input = st.sidebar.text_area(
@@ -540,16 +558,8 @@ if df is not None:
                         'Occurrences': val_counts_total.values
                     })
 
-                    chart = alt.Chart(chart_df).mark_bar().encode(
-                        x=alt.X('Occurrences:Q', title='Occurrences'),
-                        y=alt.Y(f'{col}:N', sort='-x', title=col),
-                        color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
-                    ).properties(
-                        width=600,
-                        height=400,
-                        title="Top 10 Values (All Records)"
-                    )
-
+                    # Use the new helper function for consistent bar charts
+                    chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
                     st.altair_chart(chart, use_container_width=True)
             else:
                 top_n = 10
@@ -564,17 +574,8 @@ if df is not None:
                     'Occurrences': val_counts_total.values
                 })
 
-                # Altair interactive bar chart
-                chart = alt.Chart(chart_df).mark_bar().encode(
-                    x=alt.X('Occurrences:Q', title='Occurrences'),
-                    y=alt.Y(f'{col}:N', sort='-x', title=col),
-                    color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='blues'))
-                ).properties(
-                    width=600,
-                    height=400,
-                    title="Top 10 Values (All Records)"
-                )
-
+                # Use the new helper function for consistent bar charts
+                chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
                 st.altair_chart(chart, use_container_width=True)
 
             # Create a table showing values, counts, and percentages
@@ -607,17 +608,8 @@ if df is not None:
                         'Occurrences': grouped_counts.values
                     })
 
-                    # Altair interactive bar chart
-                    chart2 = alt.Chart(chart_df2).mark_bar().encode(
-                        x=alt.X('Occurrences:Q', title='Occurrences'),
-                        y=alt.Y(f'{col}:N', sort='-x', title=col),
-                        color=alt.Color('Occurrences:Q', scale=alt.Scale(scheme='greens'))
-                    ).properties(
-                        width=600,
-                        height=400,
-                        title="Top 10 Values (Per Unique Primary Key)"
-                    )
-
+                    # Use the new helper function for consistent bar charts
+                    chart2 = create_bar_chart(chart_df2, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
                     st.markdown("#### Top Values (Per Primary Key)")
                     st.altair_chart(chart2, use_container_width=True)
 
