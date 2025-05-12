@@ -104,6 +104,8 @@ def extract_country_region(text, *_):
     text_lower = str(text).lower()
     countries = set()
     regions = set()
+    compliance = set()
+    business_unit = set()
 
     for _, (_, match) in COUNTRY_AUTOMATON.iter(text_lower):
         if is_valid_match(match, text):
@@ -113,9 +115,19 @@ def extract_country_region(text, *_):
         if is_valid_match(match, text):
             regions.add(match)
 
+    for _, (_, match) in COMPLIANCE_AUTOMATON.iter(text_lower):
+        if is_valid_match(match, text):
+            compliance.add(match)
+
+    for _, (_, match) in BUSINESS_UNIT_AUTOMATON.iter(text_lower):
+        if is_valid_match(match, text):
+            business_unit.add(match)
+            
     return {
         "countries": list(countries),
-        "regions": list(regions)
+        "regions": list(regions),
+        "compliance": list(compliance),
+        "business_unit": list(business_unit)
     }
 
 def shorten_labels(labels, max_len=50): 
@@ -218,12 +230,26 @@ if sidebar_visible:
         value="APAC, EMEA, EWAP, Global, INDIA, LATAM, MAJOREL, Specialized Services, TGI"
     )
 
+    compliance_input = st.sidebar.text_area(
+        "Compliance List (comma separated)",
+        value="GDPR, CCPA, HIPAA, PCI DSS, ISO 27001, SOC 2, NIST, FISMA, GLBA, SOX, FedRAMP, CMMC, NIST 800-53, NIST 800-171, ISO 27701, ISO 22301, ISO 31000, ISO 9001, ISO 14001, ISO 45001, ISO 20000, ISO 27017, ISO 27018, ISO 27002, ISO 27005, ISO 27006, ISO 27007, ISO 27008, ISO 27009, ISO 27010, ISO 27011, ISO 27012, ISO 27013, ISO 27014, ISO 27015, ISO 27016, ISO 27019, ISO 27020, ISO 27021, ISO 27022, ISO 27023, ISO 27024, ISO 27025, ISO 27026, ISO 27027, ISO 27028, ISO 27029, ISO 27030, ISO 27031, ISO 27032, ISO 27033, ISO 27034, ISO 27035, ISO 27036, ISO 27037, ISO 27038, ISO 27039, ISO 27040, ISO 27041, ISO 27042, ISO 27043, ISO 27044, ISO 27045, ISO 27046, ISO 27047, ISO 27048, ISO 27049, ISO 27050, ISO 27051, ISO 27052, ISO 27053, ISO 27054, ISO 27055, ISO 27056, ISO 27057, ISO 27058, ISO 27059, ISO 27060, ISO 27061, ISO 27062, ISO 27063, ISO 27064, ISO 27065, ISO 27066, ISO 27067, ISO 27068, ISO 27069, ISO 27070, ISO 27071, ISO 27072, ISO 27073, ISO 27074, ISO 27075, ISO 27076, ISO 27077, ISO 27078, ISO 27079, ISO 27080, ISO 27081, ISO 27082, ISO 27083, ISO 27084, ISO 27085, ISO 27086, ISO 27087, ISO 27088, ISO 27089, ISO 27090, ISO 27091, ISO 27092, ISO 27093, ISO 27094, ISO 27095, ISO 27096, ISO 27097, ISO 27098, ISO 27099, ISO 27100"
+    )
+
+    business_unit_input = st.sidebar.text_area(
+        "Business Unit List (comma separated)",
+        value="Cloud, Infrastructure, Security, Network, Data Center, Enterprise, SMB, Public Sector, Healthcare, Finance, Retail, Manufacturing, Education, Technology, Consulting, Professional Services, Managed Services, Support, Sales, Marketing, Research, Development, Operations, IT, HR, Legal, Compliance, Risk Management, Quality Assurance, Customer Success, Product Management, Project Management, Business Development, Strategy, Innovation, Digital Transformation, Analytics, Business Intelligence, Artificial Intelligence, Machine Learning, Internet of Things, Blockchain, Cybersecurity, DevOps, Cloud Computing, Enterprise Software, Hardware, Services, Solutions, Platforms, Applications, Systems, Tools, Products"
+    )
+
     COUNTRY_LIST = [x.strip() for x in countries_input.split(",")]
     REGION_LIST = [x.strip() for x in regions_input.split(",")]
+    COMPLIANCE_LIST = [x.strip() for x in compliance_input.split(",")]
+    BUSINESS_UNIT_LIST = [x.strip() for x in business_unit_input.split(",")]
 
     # Build automatons once
     COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
     REGION_AUTOMATON = build_automaton(REGION_LIST)
+    COMPLIANCE_AUTOMATON = build_automaton(COMPLIANCE_LIST)
+    BUSINESS_UNIT_AUTOMATON = build_automaton(BUSINESS_UNIT_LIST)
 
     with st.sidebar.expander("➕ Add Custom Extraction Categories"):
         with st.form(key="custom_extraction_form"):
@@ -857,6 +883,98 @@ if df is not None:
                 )
         else:
             st.write("No regions were extracted from the data.")
+
+        # Add Compliance Summary
+        compliance_summary_data = []
+        for col in df.select_dtypes(include=['object', 'string']).columns:
+            non_null_values = df[col].dropna()
+            sampled_values = non_null_values
+            records_processed = len(sampled_values)
+            
+            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
+            
+            compliance_counts = {}
+            compliance_evidence = {}
+            
+            for val, res in results:
+                for c in res['compliance']:
+                    compliance_counts[c] = compliance_counts.get(c, 0) + 1
+                    if c not in compliance_evidence:
+                        compliance_evidence[c] = val
+
+            if compliance_counts:
+                records_with_compliance = sum(1 for _, res in results if res['compliance'])
+                coverage_percentage = (records_with_compliance / total_records) * 100
+
+                compliance_summary_data.append({
+                    'Field': col,
+                    'Compliance Found': ', '.join(sorted(compliance_counts.keys())),
+                    'Coverage': f"{records_with_compliance} ({coverage_percentage:.2f}%)",
+                    'Evidence': [compliance_evidence[c] for c in sorted(compliance_counts.keys())],
+                    'Records Processed': records_processed
+                })
+
+        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
+
+        if not compliance_summary_df.empty:
+            st.write("### 📋 Compliance Extraction Summary by Column")
+            st.dataframe(compliance_summary_df)
+            with st.expander("📤 Export Compliance Results"):
+                csv = compliance_summary_df.to_csv(index=False).encode()
+                st.download_button(
+                    "📄 Download as CSV",
+                    data=csv,
+                    file_name="compliance_extraction.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.write("No compliance terms were extracted from the data.")
+
+        # Add Business Unit Summary
+        business_unit_summary_data = []
+        for col in df.select_dtypes(include=['object', 'string']).columns:
+            non_null_values = df[col].dropna()
+            sampled_values = non_null_values
+            records_processed = len(sampled_values)
+            
+            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
+            
+            business_unit_counts = {}
+            business_unit_evidence = {}
+            
+            for val, res in results:
+                for c in res['business_unit']:
+                    business_unit_counts[c] = business_unit_counts.get(c, 0) + 1
+                    if c not in business_unit_evidence:
+                        business_unit_evidence[c] = val
+
+            if business_unit_counts:
+                records_with_business_unit = sum(1 for _, res in results if res['business_unit'])
+                coverage_percentage = (records_with_business_unit / total_records) * 100
+
+                business_unit_summary_data.append({
+                    'Field': col,
+                    'Business Units Found': ', '.join(sorted(business_unit_counts.keys())),
+                    'Coverage': f"{records_with_business_unit} ({coverage_percentage:.2f}%)",
+                    'Evidence': [business_unit_evidence[c] for c in sorted(business_unit_counts.keys())],
+                    'Records Processed': records_processed
+                })
+
+        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
+
+        if not business_unit_summary_df.empty:
+            st.write("### 🏢 Business Unit Extraction Summary by Column")
+            st.dataframe(business_unit_summary_df)
+            with st.expander("📤 Export Business Unit Results"):
+                csv = business_unit_summary_df.to_csv(index=False).encode()
+                st.download_button(
+                    "📄 Download as CSV",
+                    data=csv,
+                    file_name="business_unit_extraction.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.write("No business units were extracted from the data.")
 
     # --- Custom Extraction Summary (Structured like Country/Region) ---
     if "custom_categories" in st.session_state and df is not None:
