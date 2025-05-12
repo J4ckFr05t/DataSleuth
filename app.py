@@ -21,14 +21,48 @@ def simplify_dtype(dtype):
     if pd.api.types.is_datetime64_any_dtype(dtype): return "datetime"
     return "other"
 
+def is_internal_ip(ip):
+    """Check if an IP address is internal/private"""
+    # Convert to list of integers
+    try:
+        octets = [int(x) for x in ip.split('.')]
+        if len(octets) != 4:
+            return False
+        
+        # Check for private IP ranges
+        if octets[0] == 10:  # 10.0.0.0/8
+            return True
+        if octets[0] == 172 and 16 <= octets[1] <= 31:  # 172.16.0.0/12
+            return True
+        if octets[0] == 192 and octets[1] == 168:  # 192.168.0.0/16
+            return True
+        if octets[0] == 127:  # 127.0.0.0/8 (localhost)
+            return True
+        if octets[0] == 169 and octets[1] == 254:  # 169.254.0.0/16 (link-local)
+            return True
+        
+        return False
+    except:
+        return False
+
 def detect_pattern(value):
     value = str(value).strip()
     known_patterns = {
-        r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$": ("IPv4", "<octet>.<octet>.<octet>.<octet>"),
+        r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$": ("IP Address", "<octet>.<octet>.<octet>.<octet>"),
         r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$": ("MAC Address", "<hex>:<hex>:<hex>:<hex>:<hex>:<hex>"),
         r"^([a-zA-Z0-9_.+-]+)\@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$": ("Email", "<username>@<domain>.<tld>"),
         r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$": ("FQDN", "<subdomain>.<domain>.<tld>"),
     }
+    
+    # Special handling for IP addresses
+    ip_pattern = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+    if re.match(ip_pattern, value):
+        if is_internal_ip(value):
+            return "Internal IP", "<private_octet>.<private_octet>.<private_octet>.<private_octet>"
+        else:
+            return "External IP", "<public_octet>.<public_octet>.<public_octet>.<public_octet>"
+
+    # Check other known patterns
     for pat, (label, example) in known_patterns.items():
         if re.match(pat, value):
             return label, example
@@ -654,7 +688,13 @@ if df is not None:
     st.markdown("## Pattern Detection")
     st.subheader("🔍 Pattern Detection")
     st.markdown("""
-    Each value is scanned for **known formats** like IP, MAC, Email, FQDN. 
+    Each value is scanned for **known formats** like:
+    - **Internal IP**: Private IP addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, etc.)
+    - **External IP**: Public IP addresses
+    - **MAC Address**: Network hardware addresses
+    - **Email**: Email addresses
+    - **FQDN**: Fully Qualified Domain Names
+    
     If not matched, a symbolic abstraction is used:
     - **A** = Uppercase letter
     - **a** = Lowercase letter
