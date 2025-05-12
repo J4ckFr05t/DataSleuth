@@ -4,3 +4,4 @@ altair
 pyahocorasick
 wordcloud
 matplotlib
+openpyxl
