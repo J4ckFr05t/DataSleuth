@@ -767,6 +767,7 @@ if df is not None:
         st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
         summary_data = []
+        region_summary_data = []
 
         # Get the total number of records in the DataFrame
         total_records = len(df)
@@ -782,32 +783,80 @@ if df is not None:
             country_counts = {}
             country_evidence = {}
 
+            region_counts = {}
+            region_evidence = {}
+
             for val, res in results:
                 for c in res['countries']:
                     country_counts[c] = country_counts.get(c, 0) + 1
                     if c not in country_evidence:
                         country_evidence[c] = val  # first evidence sample
 
+                for c in res['regions']:
+                    region_counts[c] = region_counts.get(c, 0) + 1
+                    if c not in region_evidence:
+                        region_evidence[c] = val  # first evidence sample
+
+            # Create country summary if countries found
             if country_counts:
-                total_country_mentions = sum(country_counts.values())
-                coverage_percentage = (total_country_mentions / total_records) * 100
+                # Count records that have at least one country
+                records_with_countries = sum(1 for _, res in results if res['countries'])
+                coverage_percentage = (records_with_countries / total_records) * 100
 
                 summary_data.append({
                     'Field': col,
                     'Countries Found': ', '.join(sorted(country_counts.keys())),
-                    'Coverage': f"{total_country_mentions} ({coverage_percentage:.2f}%)",
+                    'Coverage': f"{records_with_countries} ({coverage_percentage:.2f}%)",
                     'Evidence': [country_evidence[c] for c in sorted(country_counts.keys())],
                     'Records Processed': records_processed
                 })
 
-        summary_df = pd.DataFrame(summary_data)
+            # Create region summary if regions found
+            if region_counts:
+                # Count records that have at least one region
+                records_with_regions = sum(1 for _, res in results if res['regions'])
+                coverage_percentage = (records_with_regions / total_records) * 100
 
-        # Show the summary
+                region_summary_data.append({
+                    'Field': col,
+                    'Regions Found': ', '.join(sorted(region_counts.keys())),
+                    'Coverage': f"{records_with_regions} ({coverage_percentage:.2f}%)",
+                    'Evidence': [region_evidence[c] for c in sorted(region_counts.keys())],
+                    'Records Processed': records_processed
+                })
+
+        # Create DataFrames for both summaries
+        summary_df = pd.DataFrame(summary_data) if summary_data else pd.DataFrame()
+        region_summary_df = pd.DataFrame(region_summary_data) if region_summary_data else pd.DataFrame()
+
+        # Show both summaries
         if not summary_df.empty:
-            st.write("### Country Extraction Summary by Column")
+            st.write("### 🌍 Country Extraction Summary by Column")
             st.dataframe(summary_df)
+            with st.expander("📤 Export Country Results"):
+                csv = summary_df.to_csv(index=False).encode()
+                st.download_button(
+                    "📄 Download as CSV",
+                    data=csv,
+                    file_name="country_extraction.csv",
+                    mime="text/csv"
+                )
         else:
             st.write("No countries were extracted from the data.")
+
+        if not region_summary_df.empty:
+            st.write("### 🌐 Region Extraction Summary by Column")
+            st.dataframe(region_summary_df)
+            with st.expander("📤 Export Region Results"):
+                csv = region_summary_df.to_csv(index=False).encode()
+                st.download_button(
+                    "📄 Download as CSV",
+                    data=csv,
+                    file_name="region_extraction.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.write("No regions were extracted from the data.")
 
     # --- Custom Extraction Summary (Structured like Country/Region) ---
     if "custom_categories" in st.session_state and df is not None:
