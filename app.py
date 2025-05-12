@@ -552,22 +552,33 @@ if df is not None:
                         "Yearly": "Y"
                     }
 
-                    # UI: date range picker
-                    min_date = parsed_col.min().date()
-                    max_date = parsed_col.max().date()
-                    start_date, end_date = st.date_input(
-                        f"Select date range for `{col}`",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                        key=f"range_{col}"
+                    # Add checkbox to toggle between all dates and date range
+                    show_all_dates = st.checkbox(
+                        f"Show all dates for `{col}`",
+                        value=False,
+                        key=f"show_all_{col}"
                     )
 
-                    # Filter and resample
-                    filtered_df = temp_df[
-                        (temp_df['__datetime__'].dt.date >= start_date) &
-                        (temp_df['__datetime__'].dt.date <= end_date)
-                    ].copy()
+                    if not show_all_dates:
+                        # UI: date range picker (only show if not showing all dates)
+                        min_date = parsed_col.min().date()
+                        max_date = parsed_col.max().date()
+                        start_date, end_date = st.date_input(
+                            f"Select date range for `{col}`",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                            key=f"range_{col}"
+                        )
+
+                        # Filter by date range
+                        filtered_df = temp_df[
+                            (temp_df['__datetime__'].dt.date >= start_date) &
+                            (temp_df['__datetime__'].dt.date <= end_date)
+                        ].copy()
+                    else:
+                        # Use all dates
+                        filtered_df = temp_df.copy()
 
                     resampled = filtered_df.set_index("__datetime__").resample(freq_map[freq])
 
@@ -580,7 +591,6 @@ if df is not None:
                         chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
 
                     st.line_chart(chart_df)
-                    st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
                     continue  # Skip to next column
             except Exception:
                 pass
@@ -707,8 +717,6 @@ if df is not None:
             )
 
             st.altair_chart(hist, use_container_width=True)
-
-        st.progress(int(coverage), text=f"Coverage: {coverage:.2f}%")
 
 
     st.markdown("## Pattern Detection")
