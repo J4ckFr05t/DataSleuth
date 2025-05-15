@@ -95,10 +95,19 @@ def build_automaton(keyword_list):
     return A
 
 def is_valid_match(term, text):
-    term_l = term.lower()
-    if term_l in AMBIGUOUS_TERMS:
-        return re.search(rf'\\b{re.escape(term_l)}\\b', text.lower()) is not None
-    return True
+    """
+    Check if a term appears in text with proper word boundaries.
+    Matches only if the term is:
+    1. The entire string
+    2. At start followed by non-alphanumeric
+    3. At end preceded by non-alphanumeric
+    4. Between non-alphanumeric characters
+    """
+    # Escape special regex characters in the term
+    escaped_term = re.escape(term)
+    # Build the pattern
+    pattern = f"(?i)(^{escaped_term}$)|(^{escaped_term}[^a-zA-Z0-9])|([^a-zA-Z0-9]+{escaped_term}$)|([^a-zA-Z0-9]{escaped_term}[^a-zA-Z0-9])"
+    return re.search(pattern, text) is not None
 
 def extract_country_region(text, *_):
     text_lower = str(text).lower()
@@ -107,20 +116,21 @@ def extract_country_region(text, *_):
     compliance = set()
     business_unit = set()
 
+    # For each automaton, we'll now check for valid matches
     for _, (_, match) in COUNTRY_AUTOMATON.iter(text_lower):
-        if is_valid_match(match, text):
+        if is_valid_match(match.lower(), text_lower):
             countries.add(match)
 
     for _, (_, match) in REGION_AUTOMATON.iter(text_lower):
-        if is_valid_match(match, text):
+        if is_valid_match(match.lower(), text_lower):
             regions.add(match)
 
     for _, (_, match) in COMPLIANCE_AUTOMATON.iter(text_lower):
-        if is_valid_match(match, text):
+        if is_valid_match(match.lower(), text_lower):
             compliance.add(match)
 
     for _, (_, match) in BUSINESS_UNIT_AUTOMATON.iter(text_lower):
-        if is_valid_match(match, text):
+        if is_valid_match(match.lower(), text_lower):
             business_unit.add(match)
             
     return {
@@ -220,11 +230,11 @@ st.markdown("## Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
 # Toggle visibility of sidebar inputs using a checkbox
-sidebar_visible = st.sidebar.checkbox("Show/Hide Country & Region Config", value=True)
+sidebar_visible = st.sidebar.checkbox("Show/Hide Custom Extraction Configs", value=True)
 
 if sidebar_visible:
     # Sidebar inputs (only visible if the checkbox is checked)
-    st.sidebar.header("🌍 Country & Region Config")
+    st.sidebar.header("Custom Extraction Configs")
 
     countries_input = st.sidebar.text_area(
         "Country List (comma separated)",
@@ -1012,10 +1022,18 @@ if df is not None:
 
             for col in df.select_dtypes(include=["object", "string"]).columns:
                 non_null_values = df[col].dropna()
-                sampled_values = non_null_values  # can sample here if needed
+                sampled_values = non_null_values
                 records_processed = len(sampled_values)
 
-                results = sampled_values.apply(lambda x: (x, list({match for _, (_, match) in automaton.iter(x.lower())})))
+                # Update the extraction logic to use is_valid_match
+                results = []
+                for val in sampled_values:
+                    val_lower = str(val).lower()
+                    matches = set()
+                    for _, (_, match) in automaton.iter(val_lower):
+                        if is_valid_match(match.lower(), val_lower):
+                            matches.add(match)
+                    results.append((val, list(matches)))
 
                 match_counts = {}
                 match_evidence = {}
@@ -1024,7 +1042,7 @@ if df is not None:
                     for m in matches:
                         match_counts[m] = match_counts.get(m, 0) + 1
                         if m not in match_evidence:
-                            match_evidence[m] = val  # first evidence
+                            match_evidence[m] = val
 
                 if match_counts:
                     total_mentions = sum(match_counts.values())
