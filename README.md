@@ -31,31 +31,7 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 
 ## 🛠️ Local Installation
 
-1. **Clone the repository**:
 
-   ```bash
-   git clone https://github.com/your-username/datasleuth.git
-   cd datasleuth
-   ```
-
-2. **Create a virtual environment** _(optional but recommended)_:
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Run the app**:
-
-   ```bash
-   streamlit run app.py
-   ```
 
 ---
 
