@@ -181,15 +181,21 @@ if uploaded_session:
     countries_input = session_data["countries_input"]
     regions_input = session_data["regions_input"]
 
-    # Restore custom categories if present
-    if "custom_categories" in session_data:
+    # Initialize custom categories in session state if not exists
+    if "custom_categories" not in st.session_state:
         st.session_state.custom_categories = {}
+
+    # Restore custom categories if present in session data
+    if "custom_categories" in session_data:
         for cat, keywords in session_data["custom_categories"].items():
-            automaton = build_automaton(keywords)
-            st.session_state.custom_categories[cat] = {
-                "keywords": keywords,
-                "automaton": automaton
-            }
+            # Only add if category doesn't exist or if it's different
+            if cat not in st.session_state.custom_categories or st.session_state.custom_categories[cat]["keywords"] != keywords:
+                automaton = build_automaton(keywords)
+                st.session_state.custom_categories[cat] = {
+                    "keywords": keywords,
+                    "automaton": automaton
+                }
+                st.success(f"✅ Restored custom category: {cat}")
 
     st.success("✅ Session loaded successfully! Continue exploring below.")
 
@@ -259,6 +265,7 @@ if sidebar_visible:
 
             if submitted:
                 if custom_category and custom_keywords_input:
+                    # Initialize custom categories if not exists
                     if "custom_categories" not in st.session_state:
                         st.session_state.custom_categories = {}
 
@@ -273,7 +280,8 @@ if sidebar_visible:
                             "automaton": automaton
                         }
                         st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
-                        st.rerun()  # Updated from experimental_rerun
+                        # Force a rerun to ensure the UI updates
+                        st.rerun()
                 else:
                     st.error("❌ Please enter both a category name and at least one keyword.")
 
@@ -987,6 +995,12 @@ if df is not None:
     # --- Custom Extraction Summary (Structured like Country/Region) ---
     if "custom_categories" in st.session_state and df is not None:
         st.markdown("## 🧠 Custom Extraction Insights")
+        
+        # Add debug information about current custom categories
+        with st.expander("🔧 Debug: Current Custom Categories"):
+            st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
+            for cat, meta in st.session_state.custom_categories.items():
+                st.write(f"- {cat}: {len(meta['keywords'])} keywords")
 
         total_records = len(df)
 
