@@ -99,14 +99,33 @@ def is_valid_match(term, text):
     Check if a term appears in text with proper word boundaries.
     Matches only if the term is:
     1. The entire string
-    2. At start followed by non-alphanumeric
-    3. At end preceded by non-alphanumeric
-    4. Between non-alphanumeric characters
+    2. At start followed by whitespace/non-word/underscore/digit
+    3. At end preceded by whitespace/non-word/underscore/digit
+    4. Between whitespace/non-word/underscore/digit characters
+    
+    Also matches non-space versions of terms that contain spaces.
+    e.g., "Web Server" will match both "Web Server" and "WebServer"
     """
     # Escape special regex characters in the term
     escaped_term = re.escape(term)
-    # Build the pattern
-    pattern = f"(?i)(^{escaped_term}$)|(^{escaped_term}[^a-zA-Z0-9])|([^a-zA-Z0-9]+{escaped_term}$)|([^a-zA-Z0-9]{escaped_term}[^a-zA-Z0-9])"
+    
+    # If term contains spaces, create a pattern that matches both spaced and non-spaced versions
+    if ' ' in term:
+        # Create non-space version by removing spaces
+        non_space_term = term.replace(' ', '')
+        escaped_non_space = re.escape(non_space_term)
+        
+        # Build pattern for both versions using [\s\W_\d] for boundaries
+        pattern = (
+            f"(?i)("  # Start case-insensitive group
+            f"(^{escaped_term}$)|(^{escaped_term}[\\s\\W_\\d])|([\\s\\W_\\d]+{escaped_term}$)|([\\s\\W_\\d]{escaped_term}[\\s\\W_\\d])|"  # Original spaced version
+            f"(^{escaped_non_space}$)|(^{escaped_non_space}[\\s\\W_\\d])|([\\s\\W_\\d]+{escaped_non_space}$)|([\\s\\W_\\d]{escaped_non_space}[\\s\\W_\\d])"  # Non-spaced version
+            f")"  # End group
+        )
+    else:
+        # Original pattern for terms without spaces using [\s\W_\d] for boundaries
+        pattern = f"(?i)(^{escaped_term}$)|(^{escaped_term}[\\s\\W_\\d])|([\\s\\W_\\d]+{escaped_term}$)|([\\s\\W_\\d]{escaped_term}[\\s\\W_\\d])"
+    
     return re.search(pattern, text) is not None
 
 def extract_country_region(text, *_):
