@@ -13,7 +13,81 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from lxml import etree
 import xmltodict
+import jaydebeapi
+import tempfile
+import shutil
+import time
 
+# Initialize dataframe and session state variables
+if 'df' not in st.session_state:
+    st.session_state.df = None
+if 'data_source' not in st.session_state:
+    st.session_state.data_source = "File Upload"
+if 'query_executed' not in st.session_state:
+    st.session_state.query_executed = False
+if 'active_filters' not in st.session_state:
+    st.session_state.active_filters = {}
+if 'filtered_data' not in st.session_state:
+    st.session_state.filtered_data = None
+
+# Use session state dataframe
+df = st.session_state.df
+
+# Database connection configuration
+DB_CONFIGS = {
+    "Apache Spark": {
+        "driver": "org.apache.hive.jdbc.HiveDriver",
+        "url_template": "jdbc:hive2://{host}:{port}/{database}",
+        "jar_path": "./jars/hive-jdbc-3.1.3-standalone.jar",
+        "default_port": "10000",
+        "default_database": "default"
+    }
+}
+
+def get_db_connection(db_type, host, port, database, username="", password=""):
+    """Establish database connection based on type and parameters"""
+    if db_type not in DB_CONFIGS:
+        raise ValueError(f"Unsupported database type: {db_type}")
+    
+    config = DB_CONFIGS[db_type]
+    jdbc_url = config["url_template"].format(
+        host=host,
+        port=port,
+        database=database
+    )
+    
+    try:
+        conn = jaydebeapi.connect(
+            config["driver"],
+            jdbc_url,
+            [username, password],
+            config["jar_path"]
+        )
+        return conn
+    except Exception as e:
+        raise Exception(f"Failed to connect to database: {str(e)}")
+
+def execute_query(conn, query, max_rows=None):
+    """Execute a query and return results as a pandas DataFrame"""
+    try:
+        cursor = conn.cursor()
+        if max_rows:
+            query = f"{query} LIMIT {max_rows}"
+        cursor.execute(query)
+        
+        # Get column names
+        columns = [desc[0] for desc in cursor.description]
+        
+        # Fetch all rows
+        rows = cursor.fetchall()
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=columns)
+        
+        cursor.close()
+        return df
+    except Exception as e:
+        raise Exception(f"Query execution failed: {str(e)}")
 
 def simplify_dtype(dtype):
     if pd.api.types.is_integer_dtype(dtype): return "int"
@@ -207,7 +281,8 @@ st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
     session_data = pickle.load(uploaded_session)
-    df = session_data["dataframe"]
+    st.session_state.df = session_data["dataframe"]
+    df = st.session_state.df
     primary_keys = session_data["primary_keys"]
     countries_input = session_data["countries_input"]
     regions_input = session_data["regions_input"]
@@ -219,7 +294,6 @@ if uploaded_session:
     # Restore custom categories if present in session data
     if "custom_categories" in session_data:
         for cat, keywords in session_data["custom_categories"].items():
-            # Only add if category doesn't exist or if it's different
             if cat not in st.session_state.custom_categories or st.session_state.custom_categories[cat]["keywords"] != keywords:
                 automaton = build_automaton(keywords)
                 st.session_state.custom_categories[cat] = {
@@ -233,7 +307,7 @@ if uploaded_session:
 # --- Dynamic Table of Contents ---
 toc = """
 # Table of Contents
-- [Upload New File](#upload-new-file)
+- [Data Source Selection](#data-source-selection)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
@@ -247,8 +321,325 @@ if "custom_categories" in st.session_state and st.session_state.custom_categorie
 
 st.sidebar.markdown(toc)
 
-st.markdown("## Upload New File")
-uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
+st.markdown("## Data Source Selection")
+data_source = st.radio(
+    "Choose your data source:",
+    ["File Upload", "Database Connection"],
+    horizontal=True,
+    key="data_source_radio"
+)
+
+# Update session state when data source changes
+if st.session_state.data_source != data_source:
+    st.session_state.data_source = data_source
+    st.session_state.query_executed = False
+    st.session_state.df = None
+    df = None
+
+if data_source == "File Upload":
+    st.markdown("### Upload New File")
+    uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
+    
+    if uploaded_file is not None:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith(".json"):
+            try:
+                # Try to read as JSON first
+                df = pd.read_json(uploaded_file)
+            except Exception as e:
+                # If that fails, try to read as JSON lines
+                try:
+                    df = pd.read_json(uploaded_file, lines=True)
+                except Exception as e2:
+                    st.error(f"Error reading JSON file: {str(e2)}")
+                    st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
+                    df = None
+        elif uploaded_file.name.endswith(".xml"):
+            try:
+                # Read the XML file content
+                xml_content = uploaded_file.read()
+                
+                # Try to parse as XML
+                try:
+                    # First attempt: Try to parse as a simple XML structure
+                    root = etree.fromstring(xml_content)
+                    
+                    # Get all elements at the first level that have children
+                    records = []
+                    for elem in root:
+                        if len(elem) > 0:  # Element has children
+                            record = {}
+                            for child in elem:
+                                record[child.tag] = child.text
+                            records.append(record)
+                    
+                    if records:
+                        df = pd.DataFrame(records)
+                    else:
+                        # If no nested structure found, try to parse as a flat structure
+                        records = []
+                        for elem in root:
+                            record = {elem.tag: elem.text}
+                            records.append(record)
+                        df = pd.DataFrame(records)
+                        
+                except Exception as e:
+                    # Second attempt: Try using xmltodict for more complex XML structures
+                    try:
+                        # Convert XML to dict
+                        xml_dict = xmltodict.parse(xml_content)
+                        
+                        # Function to flatten nested dictionary
+                        def flatten_dict(d, parent_key='', sep='_'):
+                            items = []
+                            for k, v in d.items():
+                                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                                if isinstance(v, dict):
+                                    items.extend(flatten_dict(v, new_key, sep=sep).items())
+                                elif isinstance(v, list):
+                                    # Handle lists by creating separate records
+                                    for i, item in enumerate(v):
+                                        if isinstance(item, dict):
+                                            items.extend(flatten_dict(item, f"{new_key}_{i}", sep=sep).items())
+                                        else:
+                                            items.append((f"{new_key}_{i}", item))
+                                else:
+                                    items.append((new_key, v))
+                            return dict(items)
+                        
+                        # Flatten the dictionary
+                        flat_dict = flatten_dict(xml_dict)
+                        
+                        # Convert to DataFrame
+                        if isinstance(flat_dict, dict):
+                            df = pd.DataFrame([flat_dict])
+                        else:
+                            df = pd.DataFrame(flat_dict)
+                            
+                    except Exception as e2:
+                        st.error(f"Error reading XML file: {str(e2)}")
+                        st.info("""
+                        Please ensure your XML file is in one of these formats:
+                        1. Simple XML with repeating elements (e.g., <root><item><field>value</field></item></root>)
+                        2. Complex XML with nested structures (will be flattened)
+                        """)
+                        df = None
+                        
+            except Exception as e:
+                st.error(f"Error processing XML file: {str(e)}")
+                df = None
+        else:
+            df = pd.read_excel(uploaded_file)
+        st.session_state.df = df
+        st.session_state.query_executed = True
+        st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
+    elif st.session_state.df is not None and st.session_state.query_executed:
+        st.info("ℹ️ Using data loaded from previous session.")
+        df = st.session_state.df
+    else:
+        df = None
+        st.info("📂 Please upload a file to begin analysis.")
+
+else:  # Database Connection
+    st.markdown("### Database Connection")
+    
+    # Create containers for different UI elements
+    status_container = st.empty()
+    progress_container = st.empty()
+    results_container = st.empty()
+    
+    class ProgressManager:
+        def __init__(self):
+            self.progress = 0
+            self.last_update_time = time.time()
+            self.container = progress_container
+            self.progress_bar = None
+            self.status_text = None
+        
+        def update_ui(self, message, current_progress=None):
+            """Update UI elements with rate limiting"""
+            current_time = time.time()
+            
+            # Only update if enough time has passed (0.1 seconds) or progress changed significantly
+            if current_time - self.last_update_time >= 0.1 or (current_progress is not None and abs(current_progress - self.progress) >= 0.05):
+                if current_progress is not None:
+                    self.progress = current_progress
+                
+                # Update or create progress bar and status
+                if self.progress_bar is None:
+                    self.progress_bar = self.container.progress(self.progress)
+                    self.status_text = self.container.empty()
+                else:
+                    self.progress_bar.progress(self.progress)
+                
+                # Update status message
+                self.status_text.markdown(f"""
+                <div style='margin: 10px 0; padding: 10px; border: 1px solid #4CAF50; border-radius: 5px; background-color: #f0f8f0;'>
+                    <div style='font-weight: bold;'>{message}</div>
+                    <div style='margin-top: 5px; text-align: right;'>{int(self.progress * 100)}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                self.last_update_time = current_time
+    
+    # Database type selection
+    db_type = st.selectbox(
+        "Select Database Type",
+        options=list(DB_CONFIGS.keys())
+    )
+    
+    # Connection parameters
+    col1, col2 = st.columns(2)
+    with col1:
+        host = st.text_input("Host", value="localhost")
+        database = st.text_input("Database", value=DB_CONFIGS[db_type]["default_database"])
+    with col2:
+        port = st.text_input("Port", value=DB_CONFIGS[db_type]["default_port"])
+        username = st.text_input("Username (optional)", value="")
+        password = st.text_input("Password (optional)", value="", type="password")
+    
+    # Add row limit option
+    row_limit = st.number_input(
+        "Maximum rows to fetch (0 for no limit)",
+        min_value=0,
+        max_value=1000000,
+        value=0,
+        step=1000,
+        help="Set to 0 for no limit. Limiting rows can improve performance. Recommended: 10,000-50,000 rows for optimal performance."
+    )
+    
+    # Query input with example
+    query = st.text_area(
+        "Enter your SQL query",
+        value="SELECT * FROM <table name>",
+        help="For better performance, consider:\n1. Adding WHERE clauses\n2. Selecting only needed columns\n3. Using LIMIT in your query"
+    )
+    
+    # Add a warning for large datasets only if limit is set
+    if row_limit > 50000:
+        st.warning("⚠️ Fetching more than 50,000 rows may impact performance. Consider reducing the row limit or optimizing your query.")
+    
+    # Add a note about long-running queries
+    st.info("""
+    ℹ️ **Note about long-running queries:**
+    - Large queries may take several minutes to complete
+    - A progress bar will show the current status
+    - Please wait for the completion message
+    - Do not close the browser tab while processing
+    - Results will be displayed only after completion
+    """)
+    
+    # Connection and query execution
+    if st.button("Connect and Execute Query"):
+        # Clear any previous results
+        results_container.empty()
+        
+        # Initialize progress manager
+        progress_manager = ProgressManager()
+        
+        try:
+            with st.spinner("Initializing..."):
+                # Start the connection process
+                progress_manager.update_ui("Connecting to database...", 0.05)
+                conn = get_db_connection(db_type, host, port, database, username, password)
+                progress_manager.update_ui("Connected to database successfully! Checking query size...", 0.1)
+                
+                # First, get the count of rows that would be returned
+                try:
+                    count_query = f"SELECT COUNT(*) as count FROM ({query}) as subquery"
+                    count_df = execute_query(conn, count_query)
+                    total_rows = count_df['count'].iloc[0]
+                    
+                    if row_limit > 0 and total_rows > row_limit:
+                        status_container.warning(f"⚠️ Query would return {total_rows:,} rows. Limiting to {row_limit:,} rows for better performance.")
+                        if "LIMIT" not in query.upper():
+                            query = f"{query} LIMIT {row_limit}"
+                except Exception as e:
+                    status_container.warning("⚠️ Could not determine total row count. Proceeding with query as is.")
+                
+                # Execute the actual query with progress bar
+                progress_manager.update_ui("Executing query and loading data... This may take a while for large datasets.", 0.15)
+                
+                # Execute query in chunks if row_limit is set and large
+                if row_limit > 10000:
+                    chunk_size = 10000
+                    chunks = []
+                    offset = 0
+                    
+                    while True:
+                        # Calculate progress for this chunk
+                        chunk_progress = 0.15 + (0.75 * (offset / row_limit))
+                        progress_manager.update_ui(
+                            f"Loading rows {offset:,} to {min(offset + chunk_size, row_limit):,}... "
+                            f"Please wait, this may take several minutes.",
+                            chunk_progress
+                        )
+                        
+                        chunk_query = f"{query} OFFSET {offset} LIMIT {chunk_size}"
+                        chunk_df = execute_query(conn, chunk_query)
+                        
+                        if chunk_df.empty:
+                            break
+                            
+                        chunks.append(chunk_df)
+                        offset += chunk_size
+                        
+                        if offset >= row_limit or len(chunk_df) < chunk_size:
+                            break
+                    
+                    # Combine chunks
+                    progress_manager.update_ui("Combining data chunks...", 0.9)
+                    df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+                else:
+                    df = execute_query(conn, query)
+                    progress_manager.update_ui("Processing query results...", 0.9)
+                
+                # Optimize memory usage
+                progress_manager.update_ui("Optimizing data for display...", 0.95)
+                if not df.empty:
+                    # Convert object columns to categorical if they have low cardinality
+                    for col in df.select_dtypes(include=['object']).columns:
+                        if df[col].nunique() / len(df) < 0.5:
+                            df[col] = df[col].astype('category')
+                    
+                    # Convert float columns to float32 if possible
+                    for col in df.select_dtypes(include=['float64']).columns:
+                        df[col] = df[col].astype('float32')
+                    
+                    # Convert int columns to int32 if possible
+                    for col in df.select_dtypes(include=['int64']).columns:
+                        if df[col].min() >= -2147483648 and df[col].max() <= 2147483647:
+                            df[col] = df[col].astype('int32')
+                
+                # Final status update
+                progress_manager.update_ui("Data loading complete! 🎉", 1.0)
+                
+                # Clear progress indicators
+                time.sleep(1)
+                progress_container.empty()
+                status_container.empty()
+                
+                # Store the dataframe in session state
+                st.session_state.df = df
+                st.session_state.query_executed = True
+                
+                # Show results in the results container
+                with results_container.container():
+                    st.success(f"✅ Query executed successfully! Loaded **{df.shape[0]:,}** records with **{df.shape[1]}** fields.")
+                
+                # Close the connection
+                conn.close()
+            
+        except Exception as e:
+            # Clear progress indicators
+            progress_container.empty()
+            status_container.error(f"❌ Error: {str(e)}")
+            st.session_state.df = None
+            st.session_state.query_executed = False
+            df = None
+            if 'conn' in locals():
+                conn.close()
 
 # Toggle visibility of sidebar inputs using a checkbox
 sidebar_visible = st.sidebar.checkbox("Show/Hide Custom Extraction Configs", value=True)
@@ -336,119 +727,14 @@ if sidebar_visible:
                     st.warning(f"🗑️ Deleted category `{cat_name}`")
                     st.rerun()
 
-
 else:
     st.sidebar.write("Sidebar content is hidden.")
-
-if uploaded_file is not None:
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    elif uploaded_file.name.endswith(".json"):
-        try:
-            # Try to read as JSON first
-            df = pd.read_json(uploaded_file)
-        except Exception as e:
-            # If that fails, try to read as JSON lines
-            try:
-                df = pd.read_json(uploaded_file, lines=True)
-            except Exception as e2:
-                st.error(f"Error reading JSON file: {str(e2)}")
-                st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
-                df = None
-    elif uploaded_file.name.endswith(".xml"):
-        try:
-            # Read the XML file content
-            xml_content = uploaded_file.read()
-            
-            # Try to parse as XML
-            try:
-                # First attempt: Try to parse as a simple XML structure
-                root = etree.fromstring(xml_content)
-                
-                # Get all elements at the first level that have children
-                records = []
-                for elem in root:
-                    if len(elem) > 0:  # Element has children
-                        record = {}
-                        for child in elem:
-                            record[child.tag] = child.text
-                        records.append(record)
-                
-                if records:
-                    df = pd.DataFrame(records)
-                else:
-                    # If no nested structure found, try to parse as a flat structure
-                    records = []
-                    for elem in root:
-                        record = {elem.tag: elem.text}
-                        records.append(record)
-                    df = pd.DataFrame(records)
-                    
-            except Exception as e:
-                # Second attempt: Try using xmltodict for more complex XML structures
-                try:
-                    # Convert XML to dict
-                    xml_dict = xmltodict.parse(xml_content)
-                    
-                    # Function to flatten nested dictionary
-                    def flatten_dict(d, parent_key='', sep='_'):
-                        items = []
-                        for k, v in d.items():
-                            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                            if isinstance(v, dict):
-                                items.extend(flatten_dict(v, new_key, sep=sep).items())
-                            elif isinstance(v, list):
-                                # Handle lists by creating separate records
-                                for i, item in enumerate(v):
-                                    if isinstance(item, dict):
-                                        items.extend(flatten_dict(item, f"{new_key}_{i}", sep=sep).items())
-                                    else:
-                                        items.append((f"{new_key}_{i}", item))
-                            else:
-                                items.append((new_key, v))
-                        return dict(items)
-                    
-                    # Flatten the dictionary
-                    flat_dict = flatten_dict(xml_dict)
-                    
-                    # Convert to DataFrame
-                    if isinstance(flat_dict, dict):
-                        df = pd.DataFrame([flat_dict])
-                    else:
-                        df = pd.DataFrame(flat_dict)
-                        
-                except Exception as e2:
-                    st.error(f"Error reading XML file: {str(e2)}")
-                    st.info("""
-                    Please ensure your XML file is in one of these formats:
-                    1. Simple XML with repeating elements (e.g., <root><item><field>value</field></item></root>)
-                    2. Complex XML with nested structures (will be flattened)
-                    """)
-                    df = None
-                    
-        except Exception as e:
-            st.error(f"Error processing XML file: {str(e)}")
-            df = None
-    else:
-        df = pd.read_excel(uploaded_file)
-    st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
-elif "df" in locals():
-    st.info("ℹ️ Using data loaded from session file.")
-else:
-    df = None
-    st.info("📂 Please upload a file to begin analysis.")
 
 if df is not None:
     # Add Data Filtering Section in sidebar
     if sidebar_visible:
-        st.sidebar.markdown("---")  # Add a separator
+        st.sidebar.markdown("---")
         st.sidebar.markdown("### 🔍 Data Filters")
-        
-        # Initialize session state for filters if not exists
-        if 'active_filters' not in st.session_state:
-            st.session_state.active_filters = {}
-        if 'filtered_data' not in st.session_state:
-            st.session_state.filtered_data = None
         
         # Create a form for filter selections
         with st.sidebar.form(key="filter_form"):
@@ -512,18 +798,16 @@ if df is not None:
                         st.error(f"Error filtering field {field}: {str(e)}")
                         continue
                 
-                # Update the filtered data and active filters
+                # Update the filtered data and active filters in session state
                 st.session_state.filtered_data = filtered_df
                 st.session_state.active_filters = filter_selections
             else:
                 st.session_state.filtered_data = None
                 st.session_state.active_filters = {}
-            st.rerun()
         
         elif clear_filters:
             st.session_state.active_filters = {}
             st.session_state.filtered_data = None
-            st.rerun()
         
         # Show active filters if any
         if st.session_state.active_filters:
@@ -1173,12 +1457,12 @@ if df is not None:
 
 
 if st.button("💾 Save Session"):
-    if 'df' in locals() and df is not None:
+    if st.session_state.df is not None:
         session_data = {
-            "dataframe": df,
-            "primary_keys": primary_keys,
-            "countries_input": countries_input,
-            "regions_input": regions_input,
+            "dataframe": st.session_state.df,
+            "primary_keys": primary_keys if 'primary_keys' in locals() else [],
+            "countries_input": countries_input if 'countries_input' in locals() else "",
+            "regions_input": regions_input if 'regions_input' in locals() else "",
             "custom_categories": {
                 cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
             }
