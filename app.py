@@ -246,7 +246,7 @@ if "custom_categories" in st.session_state and st.session_state.custom_categorie
 st.sidebar.markdown(toc)
 
 st.markdown("## Upload New File")
-uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload a CSV, Excel, or JSON file", type=["csv", "xlsx", "json"])
 
 # Toggle visibility of sidebar inputs using a checkbox
 sidebar_visible = st.sidebar.checkbox("Show/Hide Custom Extraction Configs", value=True)
@@ -341,6 +341,18 @@ else:
 if uploaded_file is not None:
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith(".json"):
+        try:
+            # Try to read as JSON first
+            df = pd.read_json(uploaded_file)
+        except Exception as e:
+            # If that fails, try to read as JSON lines
+            try:
+                df = pd.read_json(uploaded_file, lines=True)
+            except Exception as e2:
+                st.error(f"Error reading JSON file: {str(e2)}")
+                st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
+                df = None
     else:
         df = pd.read_excel(uploaded_file)
     st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
