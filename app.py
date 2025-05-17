@@ -11,6 +11,8 @@ import os
 from datetime import datetime
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+from lxml import etree
+import xmltodict
 
 
 def simplify_dtype(dtype):
@@ -246,7 +248,7 @@ if "custom_categories" in st.session_state and st.session_state.custom_categorie
 st.sidebar.markdown(toc)
 
 st.markdown("## Upload New File")
-uploaded_file = st.file_uploader("Upload a CSV, Excel, or JSON file", type=["csv", "xlsx", "json"])
+uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
 # Toggle visibility of sidebar inputs using a checkbox
 sidebar_visible = st.sidebar.checkbox("Show/Hide Custom Extraction Configs", value=True)
@@ -353,6 +355,80 @@ if uploaded_file is not None:
                 st.error(f"Error reading JSON file: {str(e2)}")
                 st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
                 df = None
+    elif uploaded_file.name.endswith(".xml"):
+        try:
+            # Read the XML file content
+            xml_content = uploaded_file.read()
+            
+            # Try to parse as XML
+            try:
+                # First attempt: Try to parse as a simple XML structure
+                root = etree.fromstring(xml_content)
+                
+                # Get all elements at the first level that have children
+                records = []
+                for elem in root:
+                    if len(elem) > 0:  # Element has children
+                        record = {}
+                        for child in elem:
+                            record[child.tag] = child.text
+                        records.append(record)
+                
+                if records:
+                    df = pd.DataFrame(records)
+                else:
+                    # If no nested structure found, try to parse as a flat structure
+                    records = []
+                    for elem in root:
+                        record = {elem.tag: elem.text}
+                        records.append(record)
+                    df = pd.DataFrame(records)
+                    
+            except Exception as e:
+                # Second attempt: Try using xmltodict for more complex XML structures
+                try:
+                    # Convert XML to dict
+                    xml_dict = xmltodict.parse(xml_content)
+                    
+                    # Function to flatten nested dictionary
+                    def flatten_dict(d, parent_key='', sep='_'):
+                        items = []
+                        for k, v in d.items():
+                            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                            if isinstance(v, dict):
+                                items.extend(flatten_dict(v, new_key, sep=sep).items())
+                            elif isinstance(v, list):
+                                # Handle lists by creating separate records
+                                for i, item in enumerate(v):
+                                    if isinstance(item, dict):
+                                        items.extend(flatten_dict(item, f"{new_key}_{i}", sep=sep).items())
+                                    else:
+                                        items.append((f"{new_key}_{i}", item))
+                            else:
+                                items.append((new_key, v))
+                        return dict(items)
+                    
+                    # Flatten the dictionary
+                    flat_dict = flatten_dict(xml_dict)
+                    
+                    # Convert to DataFrame
+                    if isinstance(flat_dict, dict):
+                        df = pd.DataFrame([flat_dict])
+                    else:
+                        df = pd.DataFrame(flat_dict)
+                        
+                except Exception as e2:
+                    st.error(f"Error reading XML file: {str(e2)}")
+                    st.info("""
+                    Please ensure your XML file is in one of these formats:
+                    1. Simple XML with repeating elements (e.g., <root><item><field>value</field></item></root>)
+                    2. Complex XML with nested structures (will be flattened)
+                    """)
+                    df = None
+                    
+        except Exception as e:
+            st.error(f"Error processing XML file: {str(e)}")
+            df = None
     else:
         df = pd.read_excel(uploaded_file)
     st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")

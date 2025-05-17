@@ -1,7 +1,9 @@
-streamlit
-pandas
-altair
+streamlit>=1.24.0
+pandas>=1.5.0
+altair>=4.2.0
 pyahocorasick
-wordcloud
-matplotlib
+wordcloud>=1.8.0
+matplotlib>=3.5.0
 openpyxl
+lxml>=4.9.0
+xmltodict>=0.13.0
