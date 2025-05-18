@@ -18,6 +18,8 @@ from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from column_processor import process_single_column
+import plotly.express as px
+import plotly.graph_objects as go
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -50,32 +52,60 @@ def process_extraction_parallel(col_data, col_name, total_records, extraction_fu
         results = col_data.apply(lambda x: (x, extraction_func(x)))
         records_processed = len(col_data)
         
-        # Initialize counters
-        counts = {}
-        evidence = {}
+        # Initialize counters for each category
+        counts = {
+            'countries': {},
+            'regions': {},
+            'compliance': {},
+            'business_unit': {}
+        }
+        evidence = {
+            'countries': {},
+            'regions': {},
+            'compliance': {},
+            'business_unit': {}
+        }
+        
+        # Track unique records with matches for each category
+        unique_records = {
+            'countries': set(),
+            'regions': set(),
+            'compliance': set(),
+            'business_unit': set()
+        }
         
         # Process results
-        for val, res in results:
-            for key in res:
-                for item in res[key]:
-                    counts.setdefault(key, {}).setdefault(item, 0)
-                    counts[key][item] += 1
-                    if item not in evidence.setdefault(key, {}):
-                        evidence[key][item] = val
+        for idx, (val, res) in enumerate(results):
+            # Process each category explicitly
+            for category in ['countries', 'regions', 'compliance', 'business_unit']:
+                if category in res and res[category]:  # Check if category exists and has values
+                    unique_records[category].add(idx)  # Add record index to unique set
+                    for item in res[category]:
+                        counts[category][item] = counts[category].get(item, 0) + 1
+                        if item not in evidence[category]:
+                            evidence[category][item] = val
 
         # Calculate coverage and create summary
         summary_data = []
-        for category in counts:
-            total_mentions = sum(counts[category].values())
-            coverage_percentage = (total_mentions / total_records) * 100
-            
-            summary_data.append({
-                'Field': col_name,
-                f'{category.title()} Found': ', '.join(sorted(counts[category].keys())),
-                'Coverage': f"{total_mentions} ({coverage_percentage:.2f}%)",
-                'Evidence': [evidence[category][c] for c in sorted(counts[category].keys())],
-                'Records Processed': records_processed
-            })
+        category_mapping = {
+            'countries': 'Countries',
+            'regions': 'Regions',
+            'compliance': 'Compliance',
+            'business_unit': 'Business Units'
+        }
+        
+        for category, display_name in category_mapping.items():
+            if counts[category]:  # Only process if we found any matches
+                unique_matches = len(unique_records[category])
+                coverage_percentage = (unique_matches / total_records) * 100
+                
+                summary_data.append({
+                    'Field': col_name,
+                    f'{display_name} Found': ', '.join(sorted(counts[category].keys())),
+                    'Coverage': f"{unique_matches} ({coverage_percentage:.2f}%)",
+                    'Evidence': [evidence[category][c] for c in sorted(counts[category].keys())],
+                    'Records Processed': records_processed
+                })
         
         return summary_data
     except Exception as e:
@@ -86,12 +116,16 @@ def process_custom_extraction_parallel(col_data, col_name, total_records, catego
     """Process custom extractions for a single column in parallel"""
     try:
         results = []
-        for val in col_data:
+        unique_matches = set()  # Track unique records with matches
+        
+        for idx, val in enumerate(col_data):
             val_lower = str(val).lower()
             matches = set()
             for _, (_, match) in automaton.iter(val_lower):
                 if is_valid_match(match.lower(), val_lower):
                     matches.add(match)
+            if matches:  # If we found any matches
+                unique_matches.add(idx)  # Add record index to unique set
             results.append((val, list(matches)))
 
         match_counts = {}
@@ -105,13 +139,13 @@ def process_custom_extraction_parallel(col_data, col_name, total_records, catego
                     match_evidence[m] = val
 
         if match_counts:
-            total_mentions = sum(match_counts.values())
-            coverage_percentage = (total_mentions / total_records) * 100
+            unique_match_count = len(unique_matches)
+            coverage_percentage = (unique_match_count / total_records) * 100
 
             return [{
                 "Field": col_name,
                 f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
-                "Coverage": f"{total_mentions} ({coverage_percentage:.2f}%)",
+                "Coverage": f"{unique_match_count} ({coverage_percentage:.2f}%)",
                 "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
                 "Records Processed": records_processed
             }]
@@ -275,19 +309,82 @@ def create_bar_chart(df, x_col, y_col, title, color_scheme='blues'):
     # Shorten labels if needed
     df[y_col] = shorten_labels(df[y_col].astype(str))
     
+    # Calculate percentages for tooltip
+    total = df[x_col].sum()
+    df['percentage'] = (df[x_col] / total * 100).round(1)
+    
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X(f'{x_col}:Q', title=x_col),
         y=alt.Y(f'{y_col}:N', 
                 sort='-x', 
                 title=y_col,
                 axis=alt.Axis(labelLimit=0)),  # This ensures labels are not truncated
-        color=alt.Color(f'{x_col}:Q', scale=alt.Scale(scheme=color_scheme))
+        color=alt.Color(f'{x_col}:Q', scale=alt.Scale(scheme=color_scheme)),
+        tooltip=[
+            alt.Tooltip(f'{y_col}:N', title='Value'),
+            alt.Tooltip(f'{x_col}:Q', title='Count'),
+            alt.Tooltip('percentage:Q', title='Percentage', format='.1f')
+        ]
     ).properties(
         width=600,
         height=max(400, len(df) * 25),  # Dynamic height based on number of bars
         title=title
     )
-    return chart
+    
+    return chart  # Removed the text layer that was adding labels on bars
+
+def render_donut_chart(df, x_col, y_col, title, color_scheme='blues'):
+    """Helper function to create consistent donut charts with proper label handling"""
+    # Shorten labels if needed
+    df[y_col] = shorten_labels(df[y_col].astype(str))
+    
+    # Calculate percentages for the labels
+    total = df[x_col].sum()
+    df['percentage'] = (df[x_col] / total * 100).round(1)
+    df['label'] = df[y_col] + ' (' + df[x_col].astype(str) + ', ' + df['percentage'].astype(str) + '%)'
+    
+    # Define color schemes
+    color_schemes = {
+        'blues': ['#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c'],
+        'greens': ['#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd']
+    }
+    
+    # Get colors based on scheme
+    colors = color_schemes.get(color_scheme, color_schemes['blues'])
+    # Repeat colors if needed
+    colors = colors * (len(df) // len(colors) + 1)
+    colors = colors[:len(df)]
+    
+    # Create the donut chart using Plotly
+    fig = go.Figure(data=[go.Pie(
+        labels=df['label'],  # Use the combined label
+        values=df[x_col],
+        hole=.5,
+        textinfo='label',
+        hovertemplate='%{label}<br>Count: %{value}<br>Percentage: %{percent:.1%}<extra></extra>',
+        marker=dict(colors=colors)
+    )])
+    
+    fig.update_traces(
+        textposition='outside'
+    )
+    
+    fig.update_layout(
+        title=title,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5
+        ),
+        height=500,
+        width=800,
+        margin=dict(t=50, b=50, l=50, r=50)
+    )
+    
+    return fig
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
@@ -875,6 +972,13 @@ if df is not None:
                         chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
                         st.markdown("#### Top Values (Per Primary Key)")
                         st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'donut_chart':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                        st.plotly_chart(fig, use_container_width=True)
+                    elif chart_type == 'donut_chart_pk':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Value Distribution (Per Primary Key)")
+                        st.plotly_chart(fig, use_container_width=True)
                     elif chart_type == 'histogram':
                         hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
                             alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
@@ -1012,7 +1116,8 @@ if df is not None:
                 
                 try:
                     extraction_data = future.result()
-                    all_extraction_data.extend(extraction_data)
+                    if extraction_data:  # Only extend if we got results
+                        all_extraction_data.extend(extraction_data)
                 except Exception as e:
                     st.error(f"Error processing extractions for column {col}: {str(e)}")
 

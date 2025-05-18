@@ -24,6 +24,8 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
         top_n = 10
         val_counts_total = col_data.value_counts().head(top_n)
         percent_total = (val_counts_total / total_records * 100).round(2)
+        # Get number of unique values in the top N values
+        unique_in_top_n = len(val_counts_total)
 
         if nunique == total_records:
             value_counts = col_data.value_counts().reset_index()
@@ -57,18 +59,24 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
                 if text:
                     insights['wordcloud_text'] = text
                 else:
-                    # Fall back to bar chart
+                    # Fall back to chart based on number of unique values in top N
                     chart_df = pd.DataFrame({
                         col_name: val_counts_total.index.tolist(),
                         'Occurrences': val_counts_total.values
                     })
-                    insights['charts'].append(('bar_chart', chart_df))
+                    if unique_in_top_n < 5:
+                        insights['charts'].append(('donut_chart', chart_df))
+                    else:
+                        insights['charts'].append(('bar_chart', chart_df))
             else:
                 chart_df = pd.DataFrame({
                     col_name: val_counts_total.index.tolist(),
                     'Occurrences': val_counts_total.values
                 })
-                insights['charts'].append(('bar_chart', chart_df))
+                if unique_in_top_n < 5:
+                    insights['charts'].append(('donut_chart', chart_df))
+                else:
+                    insights['charts'].append(('bar_chart', chart_df))
 
             # Create value counts table
             percent_table = pd.DataFrame({
@@ -91,12 +99,16 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
                     
                     grouped_counts = temp_df[col_name].value_counts().head(top_n)
                     percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
+                    unique_in_top_n_pk = len(grouped_counts)
                     
                     chart_df2 = pd.DataFrame({
                         col_name: grouped_counts.index.tolist(),
                         'Occurrences': grouped_counts.values
                     })
-                    insights['charts'].append(('bar_chart_pk', chart_df2))
+                    if unique_in_top_n_pk < 5:
+                        insights['charts'].append(('donut_chart_pk', chart_df2))
+                    else:
+                        insights['charts'].append(('bar_chart_pk', chart_df2))
                     
                     percent_key_table = pd.DataFrame({
                         "Value": grouped_counts.index,
