@@ -19,6 +19,107 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from column_processor import process_single_column
 
+def process_patterns_parallel(col_data, col_name):
+    """Process patterns for a single column in parallel"""
+    try:
+        patterns = col_data.apply(detect_pattern)
+        pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
+        total = pattern_counts.sum()
+
+        if total == 0:
+            return []
+
+        pattern_info = []
+        for pat, count in pattern_counts.items():
+            example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
+            confidence = round((count / total) * 100, 2)
+            pattern_info.append({
+                "Field": col_name,
+                "Pattern": pat,
+                "Example": example if example else "",
+                "Confidence (%)": confidence
+            })
+        return pattern_info
+    except Exception as e:
+        st.error(f"Error processing patterns for field {col_name}: {str(e)}")
+        return []
+
+def process_extraction_parallel(col_data, col_name, total_records, extraction_func):
+    """Process extractions (country/region/business unit) for a single column in parallel"""
+    try:
+        results = col_data.apply(lambda x: (x, extraction_func(x)))
+        records_processed = len(col_data)
+        
+        # Initialize counters
+        counts = {}
+        evidence = {}
+        
+        # Process results
+        for val, res in results:
+            for key in res:
+                for item in res[key]:
+                    counts.setdefault(key, {}).setdefault(item, 0)
+                    counts[key][item] += 1
+                    if item not in evidence.setdefault(key, {}):
+                        evidence[key][item] = val
+
+        # Calculate coverage and create summary
+        summary_data = []
+        for category in counts:
+            total_mentions = sum(counts[category].values())
+            coverage_percentage = (total_mentions / total_records) * 100
+            
+            summary_data.append({
+                'Field': col_name,
+                f'{category.title()} Found': ', '.join(sorted(counts[category].keys())),
+                'Coverage': f"{total_mentions} ({coverage_percentage:.2f}%)",
+                'Evidence': [evidence[category][c] for c in sorted(counts[category].keys())],
+                'Records Processed': records_processed
+            })
+        
+        return summary_data
+    except Exception as e:
+        st.error(f"Error processing extractions for field {col_name}: {str(e)}")
+        return []
+
+def process_custom_extraction_parallel(col_data, col_name, total_records, category_name, automaton):
+    """Process custom extractions for a single column in parallel"""
+    try:
+        results = []
+        for val in col_data:
+            val_lower = str(val).lower()
+            matches = set()
+            for _, (_, match) in automaton.iter(val_lower):
+                if is_valid_match(match.lower(), val_lower):
+                    matches.add(match)
+            results.append((val, list(matches)))
+
+        match_counts = {}
+        match_evidence = {}
+        records_processed = len(col_data)
+
+        for val, matches in results:
+            for m in matches:
+                match_counts[m] = match_counts.get(m, 0) + 1
+                if m not in match_evidence:
+                    match_evidence[m] = val
+
+        if match_counts:
+            total_mentions = sum(match_counts.values())
+            coverage_percentage = (total_mentions / total_records) * 100
+
+            return [{
+                "Field": col_name,
+                f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
+                "Coverage": f"{total_mentions} ({coverage_percentage:.2f}%)",
+                "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
+                "Records Processed": records_processed
+            }]
+        return []
+    except Exception as e:
+        st.error(f"Error processing custom extraction for field {col_name}: {str(e)}")
+        return []
+
 def simplify_dtype(dtype):
     if pd.api.types.is_integer_dtype(dtype): return "int"
     if pd.api.types.is_float_dtype(dtype): return "float"
@@ -822,38 +923,36 @@ if df is not None:
     - **?** = Other
     """)
 
-    all_pattern_info = []
+    # Create progress bar for pattern detection
+    pattern_progress = st.progress(0)
+    pattern_status = st.empty()
 
-    for col in df.columns:
-        try:
-            col_data = df[col].dropna().astype(str)
-            if len(col_data) == 0:  # Skip if no data after filtering
-                continue
-                
-            patterns = col_data.apply(detect_pattern)
+    # Process patterns in parallel
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        pattern_futures = {
+            executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
+            for col in df.columns
+        }
+        
+        all_pattern_info = []
+        total_columns = len(df.columns)
+        completed = 0
+        
+        for future in as_completed(pattern_futures):
+            col = pattern_futures[future]
+            completed += 1
+            pattern_progress.progress(completed / total_columns)
+            pattern_status.text(f"Processing patterns for column {completed}/{total_columns}: {col}")
+            
+            try:
+                pattern_info = future.result()
+                all_pattern_info.extend(pattern_info)
+            except Exception as e:
+                st.error(f"Error processing patterns for column {col}: {str(e)}")
 
-            # Count pattern frequencies
-            pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
-            total = pattern_counts.sum()
-
-            if total == 0:  # Skip if no patterns found
-                continue
-
-            pattern_info = []
-            for pat, count in pattern_counts.items():
-                example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
-                confidence = round((count / total) * 100, 2)
-                pattern_info.append({
-                    "Field": col,
-                    "Pattern": pat,
-                    "Example": example if example else "",
-                    "Confidence (%)": confidence
-                })
-
-            all_pattern_info.extend(pattern_info)
-        except Exception as e:
-            st.error(f"Error processing patterns for field {col}: {str(e)}")
-            continue
+    # Clear progress indicators
+    pattern_progress.empty()
+    pattern_status.empty()
 
     pattern_df = pd.DataFrame(all_pattern_info)
 
@@ -881,85 +980,75 @@ if df is not None:
             st.info("No patterns to export.")
 
     if sidebar_visible:
-        # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
-
         st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
+
+        # Create progress bar for extractions
+        extraction_progress = st.progress(0)
+        extraction_status = st.empty()
+
+        # Process extractions in parallel
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            extraction_futures = {
+                executor.submit(
+                    process_extraction_parallel,
+                    df[col].dropna(),
+                    col,
+                    len(df),
+                    extract_country_region
+                ): col 
+                for col in df.select_dtypes(include=['object', 'string']).columns
+            }
+            
+            all_extraction_data = []
+            total_columns = len(df.select_dtypes(include=['object', 'string']).columns)
+            completed = 0
+            
+            for future in as_completed(extraction_futures):
+                col = extraction_futures[future]
+                completed += 1
+                extraction_progress.progress(completed / total_columns)
+                extraction_status.text(f"Processing extractions for column {completed}/{total_columns}: {col}")
+                
+                try:
+                    extraction_data = future.result()
+                    all_extraction_data.extend(extraction_data)
+                except Exception as e:
+                    st.error(f"Error processing extractions for column {col}: {str(e)}")
+
+        # Clear progress indicators
+        extraction_progress.empty()
+        extraction_status.empty()
+
+        # Process results by category
         summary_data = []
         region_summary_data = []
+        compliance_summary_data = []
+        business_unit_summary_data = []
 
-        # Get the total number of records in the DataFrame
-        total_records = len(df)
+        for data in all_extraction_data:
+            if 'Countries Found' in data:
+                summary_data.append(data)
+            if 'Regions Found' in data:
+                region_summary_data.append(data)
+            if 'Compliance Found' in data:
+                compliance_summary_data.append(data)
+            if 'Business Units Found' in data:
+                business_unit_summary_data.append(data)
 
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values  # No sampling
-            records_processed = len(sampled_values)
-
-            # Apply extraction
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-
-            country_counts = {}
-            country_evidence = {}
-
-            region_counts = {}
-            region_evidence = {}
-
-            for val, res in results:
-                for c in res['countries']:
-                    country_counts[c] = country_counts.get(c, 0) + 1
-                    if c not in country_evidence:
-                        country_evidence[c] = val  # first evidence sample
-
-                for c in res['regions']:
-                    region_counts[c] = region_counts.get(c, 0) + 1
-                    if c not in region_evidence:
-                        region_evidence[c] = val  # first evidence sample
-
-            # Create country summary if countries found
-            if country_counts:
-                # Count records that have at least one country
-                records_with_countries = sum(1 for _, res in results if res['countries'])
-                coverage_percentage = (records_with_countries / total_records) * 100
-
-                summary_data.append({
-                    'Field': col,
-                    'Countries Found': ', '.join(sorted(country_counts.keys())),
-                    'Coverage': f"{records_with_countries} ({coverage_percentage:.2f}%)",
-                    'Evidence': [country_evidence[c] for c in sorted(country_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-            # Create region summary if regions found
-            if region_counts:
-                # Count records that have at least one region
-                records_with_regions = sum(1 for _, res in results if res['regions'])
-                coverage_percentage = (records_with_regions / total_records) * 100
-
-                region_summary_data.append({
-                    'Field': col,
-                    'Regions Found': ', '.join(sorted(region_counts.keys())),
-                    'Coverage': f"{records_with_regions} ({coverage_percentage:.2f}%)",
-                    'Evidence': [region_evidence[c] for c in sorted(region_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        # Create DataFrames for both summaries
+        # Create DataFrames for summaries
         summary_df = pd.DataFrame(summary_data) if summary_data else pd.DataFrame()
         region_summary_df = pd.DataFrame(region_summary_data) if region_summary_data else pd.DataFrame()
+        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
+        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
 
-        # Show both summaries
+        # Display summaries
         if not summary_df.empty:
             st.write("### 🌍 Country Extraction Summary by Column")
             st.dataframe(summary_df)
             with st.expander("📤 Export Country Results"):
                 csv = summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="country_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="country_extraction.csv", mime="text/csv")
         else:
             st.write("No countries were extracted from the data.")
 
@@ -968,112 +1057,32 @@ if df is not None:
             st.dataframe(region_summary_df)
             with st.expander("📤 Export Region Results"):
                 csv = region_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="region_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="region_extraction.csv", mime="text/csv")
         else:
             st.write("No regions were extracted from the data.")
-
-        # Add Compliance Summary
-        compliance_summary_data = []
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values
-            records_processed = len(sampled_values)
-            
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-            
-            compliance_counts = {}
-            compliance_evidence = {}
-            
-            for val, res in results:
-                for c in res['compliance']:
-                    compliance_counts[c] = compliance_counts.get(c, 0) + 1
-                    if c not in compliance_evidence:
-                        compliance_evidence[c] = val
-
-            if compliance_counts:
-                records_with_compliance = sum(1 for _, res in results if res['compliance'])
-                coverage_percentage = (records_with_compliance / total_records) * 100
-
-                compliance_summary_data.append({
-                    'Field': col,
-                    'Compliance Found': ', '.join(sorted(compliance_counts.keys())),
-                    'Coverage': f"{records_with_compliance} ({coverage_percentage:.2f}%)",
-                    'Evidence': [compliance_evidence[c] for c in sorted(compliance_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
 
         if not compliance_summary_df.empty:
             st.write("### 📋 Compliance Extraction Summary by Column")
             st.dataframe(compliance_summary_df)
             with st.expander("📤 Export Compliance Results"):
                 csv = compliance_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="compliance_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="compliance_extraction.csv", mime="text/csv")
         else:
             st.write("No compliance terms were extracted from the data.")
-
-        # Add Business Unit Summary
-        business_unit_summary_data = []
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values
-            records_processed = len(sampled_values)
-            
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-            
-            business_unit_counts = {}
-            business_unit_evidence = {}
-            
-            for val, res in results:
-                for c in res['business_unit']:
-                    business_unit_counts[c] = business_unit_counts.get(c, 0) + 1
-                    if c not in business_unit_evidence:
-                        business_unit_evidence[c] = val
-
-            if business_unit_counts:
-                records_with_business_unit = sum(1 for _, res in results if res['business_unit'])
-                coverage_percentage = (records_with_business_unit / total_records) * 100
-
-                business_unit_summary_data.append({
-                    'Field': col,
-                    'Business Units Found': ', '.join(sorted(business_unit_counts.keys())),
-                    'Coverage': f"{records_with_business_unit} ({coverage_percentage:.2f}%)",
-                    'Evidence': [business_unit_evidence[c] for c in sorted(business_unit_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
 
         if not business_unit_summary_df.empty:
             st.write("### 🏢 Business Unit Extraction Summary by Column")
             st.dataframe(business_unit_summary_df)
             with st.expander("📤 Export Business Unit Results"):
                 csv = business_unit_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="business_unit_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="business_unit_extraction.csv", mime="text/csv")
         else:
             st.write("No business units were extracted from the data.")
 
-    # --- Custom Extraction Summary (Structured like Country/Region) ---
+    # --- Custom Extraction Summary ---
     if "custom_categories" in st.session_state and df is not None:
         st.markdown("## 🧠 Custom Extraction Insights")
         
-        # Add debug information about current custom categories
         with st.expander("🔧 Debug: Current Custom Categories"):
             st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
             for cat, meta in st.session_state.custom_categories.items():
@@ -1083,47 +1092,48 @@ if df is not None:
 
         for category_name, meta in st.session_state.custom_categories.items():
             automaton = meta["automaton"]
-            summary_data = []
+            
+            # Create progress bar for custom extraction
+            custom_progress = st.progress(0)
+            custom_status = st.empty()
 
             st.subheader(f"🔍 Extraction Summary for `{category_name}`")
 
-            for col in df.select_dtypes(include=["object", "string"]).columns:
-                non_null_values = df[col].dropna()
-                sampled_values = non_null_values
-                records_processed = len(sampled_values)
+            # Process custom extractions in parallel
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                custom_futures = {
+                    executor.submit(
+                        process_custom_extraction_parallel,
+                        df[col].dropna(),
+                        col,
+                        total_records,
+                        category_name,
+                        automaton
+                    ): col 
+                    for col in df.select_dtypes(include=["object", "string"]).columns
+                }
+                
+                all_custom_data = []
+                total_columns = len(df.select_dtypes(include=["object", "string"]).columns)
+                completed = 0
+                
+                for future in as_completed(custom_futures):
+                    col = custom_futures[future]
+                    completed += 1
+                    custom_progress.progress(completed / total_columns)
+                    custom_status.text(f"Processing {category_name} extraction for column {completed}/{total_columns}: {col}")
+                    
+                    try:
+                        custom_data = future.result()
+                        all_custom_data.extend(custom_data)
+                    except Exception as e:
+                        st.error(f"Error processing custom extraction for column {col}: {str(e)}")
 
-                # Update the extraction logic to use is_valid_match
-                results = []
-                for val in sampled_values:
-                    val_lower = str(val).lower()
-                    matches = set()
-                    for _, (_, match) in automaton.iter(val_lower):
-                        if is_valid_match(match.lower(), val_lower):
-                            matches.add(match)
-                    results.append((val, list(matches)))
+            # Clear progress indicators
+            custom_progress.empty()
+            custom_status.empty()
 
-                match_counts = {}
-                match_evidence = {}
-
-                for val, matches in results:
-                    for m in matches:
-                        match_counts[m] = match_counts.get(m, 0) + 1
-                        if m not in match_evidence:
-                            match_evidence[m] = val
-
-                if match_counts:
-                    total_mentions = sum(match_counts.values())
-                    coverage_percentage = (total_mentions / total_records) * 100
-
-                    summary_data.append({
-                        "Field": col,
-                        f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
-                        "Coverage": f"{total_mentions} ({coverage_percentage:.2f}%)",
-                        "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
-                        "Records Processed": records_processed
-                    })
-
-            summary_df = pd.DataFrame(summary_data)
+            summary_df = pd.DataFrame(all_custom_data)
 
             if not summary_df.empty:
                 st.markdown(f"### Summary Table for `{category_name}`")
