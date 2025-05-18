@@ -13,7 +13,11 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from lxml import etree
 import xmltodict
-
+import multiprocessing
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import numpy as np
+from column_processor import process_single_column
 
 def simplify_dtype(dtype):
     if pd.api.types.is_integer_dtype(dtype): return "int"
@@ -625,50 +629,68 @@ if df is not None:
 
     st.markdown("## Per Field Insights")
     st.subheader("📌 Per Field Insights")
-    for col in df.columns:
-        st.markdown(f"### 🧬 {col}")
-        col_data = df[col].dropna()
-        total = len(df)
-        # Calculate coverage percentage safely
-        coverage = 100 - (df[col].isnull().sum() / len(df) * 100)
-        # Ensure coverage is a valid number between 0 and 100
-        coverage = max(0, min(100, float(coverage) if pd.notna(coverage) else 0))
+    
+    # Get the number of CPU cores available
+    num_cores = multiprocessing.cpu_count()
+    # Use 75% of available cores to avoid overwhelming the system
+    num_workers = max(1, int(num_cores * 0.75))
+    
+    # Create a progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Process columns in parallel
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        # Create a partial function with the common arguments
+        process_func = partial(process_single_column, 
+                             total_records=len(df),
+                             primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                             original_df=df)  # Pass the original DataFrame
         
-        # Use the safe coverage value for the progress bar
-        st.progress(coverage/100, text=f"Coverage: {coverage:.2f}%")
-        nunique = col_data.nunique()
-        is_numeric = pd.api.types.is_numeric_dtype(col_data)
-
-        if nunique == total:
-            with st.expander("📋 View Unique Values (with counts)"):
-                value_counts = col_data.value_counts().reset_index()
-                value_counts.columns = ["Value", "Count"]
-                value_counts = value_counts.sort_values("Count", ascending=False)
-                st.dataframe(value_counts, use_container_width=True)
-        elif not is_numeric:
+        # Submit all columns for processing
+        future_to_col = {
+            executor.submit(process_func, df[col], col): col 
+            for col in df.columns
+        }
+        
+        # Process results as they complete
+        total_columns = len(df.columns)
+        completed = 0
+        
+        for future in as_completed(future_to_col):
+            col = future_to_col[future]
+            completed += 1
+            progress_bar.progress(completed / total_columns)
+            status_text.text(f"Processing column {completed}/{total_columns}: {col}")
+            
             try:
-                # Try parsing as datetime
-                parsed_col = pd.to_datetime(col_data, errors="coerce", infer_datetime_format=True)
-                if parsed_col.notna().sum() == 0 and pd.api.types.is_numeric_dtype(col_data):
-                    parsed_col = pd.to_datetime(col_data, errors="coerce", unit="ms")
-                    if parsed_col.notna().sum() == 0:
-                        parsed_col = pd.to_datetime(col_data, errors="coerce", unit="s")
-
-                if parsed_col.notna().sum() > 0:
+                insights = future.result()
+                
+                # Display the insights for this column
+                st.markdown(f"### 🧬 {insights['column_name']}")
+                
+                if 'error' in insights:
+                    st.error(f"Error processing column: {insights['error']}")
+                    continue
+                
+                # Display coverage
+                if insights['text_content']:
+                    st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
+                              text=insights['text_content'][0])
+                
+                # Handle datetime columns
+                if insights.get('is_datetime'):
                     st.markdown("#### 📈 Trend (Date/Time Field)")
-
-                    temp_df = df.copy()
-                    temp_df['__datetime__'] = parsed_col
-                    temp_df = temp_df.dropna(subset=['__datetime__'])
-
-                    # UI: frequency selection
+                    parsed_col = insights['parsed_datetime']
+                    
+                    # Create datetime visualization UI
                     freq = st.selectbox(
                         f"Choose trend resolution for `{col}`",
                         options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
                         index=0,
                         key=f"freq_{col}"
                     )
-
+                    
                     freq_map = {
                         "Daily": "D",
                         "Weekly": "W",
@@ -676,16 +698,23 @@ if df is not None:
                         "Quarterly": "Q",
                         "Yearly": "Y"
                     }
-
-                    # Add checkbox to toggle between all dates and date range
+                    
                     show_all_dates = st.checkbox(
                         f"Show all dates for `{col}`",
                         value=False,
                         key=f"show_all_{col}"
                     )
-
+                    
+                    # Get the original index of non-null datetime values
+                    valid_datetime_mask = parsed_col.notna()
+                    original_indices = parsed_col.index[valid_datetime_mask]
+                    
+                    # Create a DataFrame with the datetime column and original index
+                    datetime_df = pd.DataFrame({
+                        '__datetime__': parsed_col[valid_datetime_mask]
+                    }, index=original_indices)
+                    
                     if not show_all_dates:
-                        # UI: date range picker (only show if not showing all dates)
                         min_date = parsed_col.min().date()
                         max_date = parsed_col.max().date()
                         start_date, end_date = st.date_input(
@@ -695,154 +724,85 @@ if df is not None:
                             max_value=max_date,
                             key=f"range_{col}"
                         )
-
-                        # Filter by date range
-                        filtered_df = temp_df[
-                            (temp_df['__datetime__'].dt.date >= start_date) &
-                            (temp_df['__datetime__'].dt.date <= end_date)
-                        ].copy()
+                        
+                        # Filter the datetime DataFrame using boolean indexing
+                        date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
+                                  (datetime_df['__datetime__'].dt.date <= end_date)
+                        filtered_df = datetime_df[date_mask].copy()
                     else:
-                        # Use all dates
-                        filtered_df = temp_df.copy()
-
-                    resampled = filtered_df.set_index("__datetime__").resample(freq_map[freq])
-
+                        filtered_df = datetime_df.copy()
+                    
+                    # Resample and count records
+                    resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
                     record_counts = resampled.size().rename("Total Records")
                     chart_df = pd.DataFrame(record_counts)
-
+                    
                     if primary_keys:
-                        unique_keys_df = filtered_df.drop_duplicates(subset=primary_keys)
-                        unique_counts = unique_keys_df.set_index("__datetime__").resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                        # Create a DataFrame with primary keys and datetime using the same filtered indices
+                        pk_datetime_df = pd.DataFrame({
+                            '__datetime__': filtered_df['__datetime__'],
+                            **{pk: df.loc[filtered_df.index, pk] for pk in primary_keys}
+                        })
+                        
+                        # Drop duplicates based on primary keys and resample
+                        unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
+                        unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
                         chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
-
+                    
                     st.line_chart(chart_df)
-                    continue  # Skip to next column
-            except Exception:
-                pass
-
-            avg_str_len = col_data.astype(str).apply(len).mean()
-
-            if avg_str_len > 50:
-                st.markdown("#### ☁️ Word Cloud (Long Text Field)")
-
-                # Pre-filter to only include meaningful values
-                filtered_values = col_data.dropna().astype(str).tolist()
-                filtered_values = [val for val in filtered_values if any(c.isalpha() for c in val)]
-                text = ' '.join(filtered_values).strip()
-
-                try:
-                    if text:
-                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(text)
+                    continue
+                
+                # Display wordcloud if available
+                if 'wordcloud_text' in insights:
+                    st.markdown("#### ☁️ Word Cloud (Long Text Field)")
+                    try:
+                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
                         fig, ax = plt.subplots(figsize=(10, 5))
-                        fig.patch.set_alpha(0)  # 🔥 Removes the white border
+                        fig.patch.set_alpha(0)
                         ax.imshow(wordcloud, interpolation='bilinear')
                         ax.axis("off")
                         st.pyplot(fig)
-                    else:
-                        raise ValueError("No valid words")
-                except Exception as e:
-                    st.warning("⚠️ Word cloud not generated due to non-textual content. Falling back to bar chart.")
-
-                    # Fall back to bar chart
-                    top_n = 10
-                    val_counts_total = df[col].value_counts().head(top_n)
-                    percent_total = (val_counts_total / total * 100).round(2)
-
-                    chart_df = pd.DataFrame({
-                        col: val_counts_total.index.tolist(),
-                        'Occurrences': val_counts_total.values
-                    })
-
-                    # Use the new helper function for consistent bar charts
-                    chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
-                    st.altair_chart(chart, use_container_width=True)
-            else:
-                top_n = 10
-
-                st.markdown("#### Top Values (All Rows)")
-                val_counts_total = df[col].value_counts().head(top_n)
-                percent_total = (val_counts_total / total * 100).round(2)
-
-                # Create a DataFrame for Altair
-                chart_df = pd.DataFrame({
-                    col: val_counts_total.index.tolist(),
-                    'Occurrences': val_counts_total.values
-                })
-
-                # Use the new helper function for consistent bar charts
-                chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
-                st.altair_chart(chart, use_container_width=True)
-
-            # Create a table showing values, counts, and percentages
-            percent_table = pd.DataFrame({
-                "Value": val_counts_total.index,
-                "Count": val_counts_total.values,
-                "Percentage (%)": percent_total
-            })
-
-            # Add total count to the table
-            percent_table = pd.concat([percent_table, pd.DataFrame([["Total", total, "100"]], columns=percent_table.columns)], ignore_index=True)
-
-            percent_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
-
-            st.markdown("### 📊 Value Counts and Percentages")
-            st.dataframe(percent_table, use_container_width=True)
-
-            # Determine primary key(s)
-            primary_keys = manual_keys if 'manual_keys' in locals() and manual_keys else auto_keys if 'auto_keys' in locals() and auto_keys else []
-
-            if primary_keys:
-                try:
-                    temp_df = df[primary_keys + [col]].dropna().drop_duplicates(subset=primary_keys)
-                    grouped_counts = temp_df[col].value_counts().head(top_n)
-                    percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
-
-                    # Make sure grouped_counts is already computed correctly
-                    chart_df2 = pd.DataFrame({
-                        col: grouped_counts.index.tolist(),
-                        'Occurrences': grouped_counts.values
-                    })
-
-                    # Use the new helper function for consistent bar charts
-                    chart2 = create_bar_chart(chart_df2, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
-                    st.markdown("#### Top Values (Per Primary Key)")
-                    st.altair_chart(chart2, use_container_width=True)
-
-
-                    # Create a table showing per primary key values, counts, and percentages
-                    percent_key_table = pd.DataFrame({
-                        "Value": grouped_counts.index,
-                        "Count": grouped_counts.values,
-                        "Percentage (%)": percent_keys
-                    })
-
-                    # Add total count to the table
-                    percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
-
-                    percent_key_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
-
-                    st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
-                    st.dataframe(percent_key_table, use_container_width=True)
-
-                except Exception as e:
-                    st.error(f"⚠️ Error generating primary key-based chart: {e}")
-            else:
-                st.info("ℹ️ No primary key selected or detected, so primary key based chart is skipped.")
-        else:
-            chart_df = pd.DataFrame({col: col_data})
-
-            # Create histogram with Altair
-            hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
-                alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
-                y=alt.Y('count()', title='Count')
-            ).properties(
-                width=600,
-                height=300,
-                title="Distribution"
-            )
-
-            st.altair_chart(hist, use_container_width=True)
-
+                    except Exception as e:
+                        st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
+                
+                # Display charts
+                for chart_type, chart_df in insights['charts']:
+                    if chart_type == 'bar_chart':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'bar_chart_pk':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Top Values (Per Primary Key)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'histogram':
+                        hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                            alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                            y=alt.Y('count()', title='Count')
+                        ).properties(
+                            width=600,
+                            height=300,
+                            title="Distribution"
+                        )
+                        st.altair_chart(hist, use_container_width=True)
+                
+                # Display tables
+                for table_type, table_df in insights['tables']:
+                    if table_type == 'value_counts':
+                        st.markdown("### 📊 Value Counts and Percentages")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'value_counts_pk':
+                        st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'Unique Values':
+                        with st.expander("📋 View Unique Values (with counts)"):
+                            st.dataframe(table_df, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"Error displaying results for column {col}: {str(e)}")
+    
+    # Clear the progress bar and status text
+    progress_bar.empty()
+    status_text.empty()
 
     st.markdown("## Pattern Detection")
     st.subheader("🔍 Pattern Detection")
