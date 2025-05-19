@@ -440,49 +440,63 @@ toc = """
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
 - [Pattern Detection](#pattern-detection)
-- [Country/Region Extraction Insights](#country-region-extraction-insights)
 """
 
-# Append custom categories to the TOC if present
+# Only add Country/Region Extraction Insights to TOC if sidebar is visible
+if st.session_state.get('sidebar_visible', True):
+    toc += "\n- [Country/Region Extraction Insights](#country-region-extraction-insights)"
+
+# Append custom categories to the TOC if present, regardless of sidebar visibility
 if "custom_categories" in st.session_state and st.session_state.custom_categories:
     toc += "\n- [Custom Extraction Insights](#custom-extraction-insights)"
 
 st.sidebar.markdown(toc)
 
-st.markdown("## Upload New File")
-uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
+# Initialize session state for inputs if not exists
+if 'countries_input' not in st.session_state:
+    st.session_state.countries_input = "India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People's Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People's Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia"
+if 'regions_input' not in st.session_state:
+    st.session_state.regions_input = "APAC, EMEA, EWAP, Global, INDIA, LATAM, MAJOREL, Specialized Services, TGI"
+if 'compliance_input' not in st.session_state:
+    st.session_state.compliance_input = "GDPR, CCPA, HIPAA, PCI, PCI DSS, ISO 27001, SOC 2, NIST, FISMA, GLBA, SOX, FedRAMP, CMMC, NIST 800-53, NIST 800-171, ISO 27701, ISO 22301, ISO 31000, ISO 9001, ISO 14001, ISO 45001, ISO 20000, ISO 27017, ISO 27018, ISO 27002, ISO 27005, ISO 27006, ISO 27007, ISO 27008, ISO 27009, ISO 27010, ISO 27011, ISO 27012, ISO 27013, ISO 27014, ISO 27015, ISO 27016, ISO 27019, ISO 27020, ISO 27021, ISO 27022, ISO 27023, ISO 27024, ISO 27025, ISO 27026, ISO 27027, ISO 27028, ISO 27029, ISO 27030, ISO 27031, ISO 27032, ISO 27033, ISO 27034, ISO 27035, ISO 27036, ISO 27037, ISO 27038, ISO 27039, ISO 27040, ISO 27041, ISO 27042, ISO 27043, ISO 27044, ISO 27045, ISO 27046, ISO 27047, ISO 27048, ISO 27049, ISO 27050, ISO 27051, ISO 27052, ISO 27053, ISO 27054, ISO 27055, ISO 27056, ISO 27057, ISO 27058, ISO 27059, ISO 27060, ISO 27061, ISO 27062, ISO 27063, ISO 27064, ISO 27065, ISO 27066, ISO 27067, ISO 27068, ISO 27069, ISO 27070, ISO 27071, ISO 27072, ISO 27073, ISO 27074, ISO 27075, ISO 27076, ISO 27077, ISO 27078, ISO 27079, ISO 27080, ISO 27081, ISO 27082, ISO 27083, ISO 27084, ISO 27085, ISO 27086, ISO 27087, ISO 27088, ISO 27089, ISO 27090, ISO 27091, ISO 27092, ISO 27093, ISO 27094, ISO 27095, ISO 27096, ISO 27097, ISO 27098, ISO 27099, ISO 27100"
+if 'business_unit_input' not in st.session_state:
+    st.session_state.business_unit_input = "IT-SOFTWARE, CLIENT OPERATIONS, WORKFORCE, STAFF, CS-CLIENT SERVICES, BUSINESS DEVELOPMENT, OPS-CLIENT DELIVERY, HR, Client Operations, Workforce Management, WORKFORCE MANAGEMENT, Facilities, SALES, LC-AUDIT, FA-FP&A, HR-RECRUITMENT / TALENT ACQUISITION, Ops-Client Delivery, HR, MANAGEMENT/MANAGERS, Client Services, OPS-WORKFORCE MANAGEMENT, LEGAL, AF-PREMISES AND ADMINISTRATION, SUPPORT HELP DESK, HR-CROSS FUNCTION ROLES, Infrastructure Desktop, Quality Assurance, OPS-GLOBAL PROCESSES, STANDARDS AND CONTINUOUS IMPROVEMENT, SUPPORT ANALYST, DEVELOPMENT DEVELOPER, IT-INFRASTRUCTURE OPERATIONS, IT-INFORMATION SECURITY, Training, MANAGEMENT/MANAGERS, CLIENT, SUPPORT ADMINISTRATION, HR-TRAINING, IT, HUMAN RESOURCES, BUSINESS INTELLIGENCE, HR-PAYROLL, HR-LEARNING AND DEVELOPMENT AND ORGANIZATIONAL DEVELOPMENT, INFRASTRUCTURE DESKTOP, OPS-BUSINESS INTELLIGENCE AND REPORTING, TRAINING, RECRUITING, OPS-QUALITY ANALYSIS / CONTINUOUS IMPROVEMENT, STAFF, STAFF, OPS-CROSS FUNCTION ROLES, IT-SERVICE DESK AND IT SERVICE MANAGEMENT, QUALITY ASSURANCE, FINANCE, IT-SUPPORT SERVICES, FA-PROCUREMENT AND SUPPORT, MKT- CROSS FUNCTION ROLES, IT-DATA COE, MANAGEMENT/MANAGERS, TRAINING, INFRASTRUCTURE SYSTEMS, Support Help Desk, MARKETING, HR-ONBOARDING, AF-HEALTH AND SAFETY, Professional Services, FACILITIES, AF-MAINTENANCE, ADMINISTRATION, DEVELOPMENT SCRIPTING, BD-BUSINESS DEVELOPMENT, HR-Training, CLIENT SERVICES, CS-STRATEGIC ACCOUNT MANAGEMENT, IT-INFRASTRUCTURE ARCHITECTURE AND ENGINEERING, MANAGEMENT/MANAGERS, HR, SECURITY, PAYROLL, MANAGEMENT TRAINING DEVELOPMENT, ANALYST, DS-CROSS FUNCTION ROLES, RISK, Ops-Quality Analysis / Continuous Improvement, Finance, OPS-PROJECT MANAGEMENT, OPS-Cross Function Roles, PROCUREMENT, INFORMATION SECURITY, HR-EMPLOYEE RELATIONS, EXECUTIVE MANAGEMENT, FA-CROSS FUNCTION ROLES, LC-COMPLIANCE, IT-Service Desk and IT Service Management, BD-CROSS FUNCTION ROLES, APPLICATION SUPPORT, Ops-Workforce Management, STDS-ROLLOUT & AUDIT, DS-CONSULTING AND SOLUTIONING, IT-Infrastructure Operations, CS-Client Services, IT-Software, HR-HELP DESK, INFRASTRUCTURE TELECOM, HR-COMPENSATION AND BENEFITS, MKT-DIGITAL MARKETING, INFRASTRUCTURE NETWORK, LC-LEGAL, Business Development, HR-Cross Function Roles, FA-Cross Function Roles, FA-FINANCIAL SYSTEMS, TRANSFORMATION AND AUTOMATION, BD-SALES ENABLEMENT, MKT-WEB DESIGN, HR-Payroll, Marketing, IT-CROSS FUNCTION ROLES, BD-PRESALES, INFRASTRUCTURE DATABASE, Recruiting, BD-Business Development, SALES, CLIENT, EM-EXECUTIVE ASSISTANTS, IT, STAFF, Development Scripting, TRANSFORMATION, EXTERNAL, IT, MANAGEMENT/MANAGERS, HR-DIVERSITY, EQUITY AND INCLUSION, Management Training Development, CORPORATE COMPLIANCE, Infrastructure Database, Human Resources, SUPPORT PRODUCT MANAGEMENT, AF-CROSS FUNCTION ROLES, DS-DATA ANALYTICS, Transformation, SUPPORT PROJECT MANAGEMENT, Risk, STDS-IMPROVEMENT DELIVERY PERFORMANCE, STAFF, TRAINING, IT-Infrastructure Architecture and Engineering, Infrastructure Systems, STRATEGIC ACCOUNT MANAGEMENT, IT-PLATFORM ENGINEERING SOLUTIONS COE, BUSINESS OPERATIONS, AF-LOGISTICS AND WAREHOUSING, DS-Consulting and Solutioning, MKT-CONTENT DEVELOPMENT, EM-LOCAL EXECUTIVE MANAGEMENT TIER 3, STAFF, STAFF, STAFF, Ops-Business Intelligence and Reporting, Legal, EM-LOCAL EXECUTIVE MANAGEMENT, FA-TREASURY, STAFF, IT, Support Product Management, LC-DATA PRIVACY, AUDITOR, Business Operations, Ops-Project Management, Support Project Management, HR, MANAGEMENT/MANAGERS, TRAINING, Business Intelligence, EM-LOCAL EXECUTIVE MANAGEMENT TIER 1, DEVELOPMENT ARCHITECT, AF-Premises and Administration, TRAINING, MANAGEMENT/MANAGERS, Payroll, Procurement, AF-Maintenance, Ops-Global Processes, Standards and Continuous Improvement, IT, STAFF, STAFF, HR-Onboarding, IT, TRAINING, HR-Learning and Development and Organizational Development"
 
-# Toggle visibility of sidebar inputs using a checkbox
-sidebar_visible = st.sidebar.checkbox("Show/Hide Custom Extraction Configs", value=True)
+# Country/Region/Compliance/Business Unit Configs Section
+st.sidebar.markdown("### 🌍 Extraction Configs")
+if 'sidebar_visible' not in st.session_state:
+    st.session_state.sidebar_visible = True
+sidebar_visible = st.sidebar.checkbox("Show/Hide Extraction Configs", value=st.session_state.sidebar_visible, key='sidebar_visible')
 
 if sidebar_visible:
-    # Sidebar inputs (only visible if the checkbox is checked)
-    st.sidebar.header("Custom Extraction Configs")
-
     countries_input = st.sidebar.text_area(
         "Country List (comma separated)",
-        value="India, Bharat, Republic of India, United Arab Emirates, UAE, Emirates, Saudi Arabia, KSA, Kingdom of Saudi Arabia, United Kingdom, UK, Britain, Great Britain, United States of America, USA, US, United States, America, Armenia, Republic of Armenia, Azerbaijan, Republic of Azerbaijan, Canada, Côte d'Ivoire, Ivory Coast, Chile, Republic of Chile, Colombia, Republic of Colombia, Costa Rica, Republic of Costa Rica, Germany, Deutschland, Federal Republic of Germany, Ecuador, Republic of Ecuador, Egypt, Arab Republic of Egypt, Spain, España, Kingdom of Spain, France, French Republic, Georgia, Sakartvelo, Ghana, Republic of Ghana, Croatia, Republic of Croatia, Italy, Italian Republic, Japan, Nippon, Nihon, Republic of Korea, South Korea, Korea (South), Lithuania, Republic of Lithuania, Luxembourg, Grand Duchy of Luxembourg, Morocco, Kingdom of Morocco, TFYR Macedonia, North Macedonia, Macedonia, Mexico, United Mexican States, Netherlands, Holland, Kingdom of the Netherlands, Philippines, Republic of the Philippines, Peru, Republic of Peru, Poland, Republic of Poland, Portugal, Portuguese Republic, Romania, Senegal, Republic of Senegal, Suriname, Republic of Suriname, Togo, Togolese Republic, Thailand, Kingdom of Thailand, Siam, Turkey, Türkiye, Republic of Turkey, Ethiopia, Federal Democratic Republic of Ethiopia, Algeria, People's Democratic Republic of Algeria, Jordan, Hashemite Kingdom of Jordan, Madagascar, Republic of Madagascar, Kazakhstan, Republic of Kazakhstan, China, People's Republic of China, PRC, Lebanon, Lebanese Republic, Serbia, Republic of Serbia, South Africa, Republic of South Africa, United Republic of Tanzania, Tanzania, Cameroon, Republic of Cameroon, Russian Federation, Russia, Switzerland, Swiss Confederation, Viet Nam, Vietnam, Socialist Republic of Vietnam, Nigeria, Federal Republic of Nigeria, Indonesia, Republic of Indonesia, Uganda, Republic of Uganda, Ukraine, Rwanda, Republic of Rwanda, Gabon, Gabonese Republic, Belarus, Kenya, Republic of Kenya, Kosovo, Republic of Kosovo, Tunisia, Republic of Tunisia, Uzbekistan, Republic of Uzbekistan, Albania, Republic of Albania, Jamaica, CTSS, Argentina, Argentine Republic, Australia, Commonwealth of Australia, Bosnia and Herzegovina, BiH, Belgium, Kingdom of Belgium, Brazil, Federative Republic of Brazil, Czech Republic, Czechia, Denmark, Kingdom of Denmark, Dominican Republic, Finland, Republic of Finland, Greece, Hellenic Republic, Mauritius, Republic of Mauritius, Guatemala, Republic of Guatemala, Guyana, Co-operative Republic of Guyana, Honduras, Republic of Honduras, Ireland, Éire, Republic of Ireland, Malaysia, Nicaragua, Republic of Nicaragua, Norway, Kingdom of Norway, Sweden, Kingdom of Sweden, Singapore, Republic of Singapore, El Salvador, Republic of El Salvador, Estonia, Republic of Estonia"
+        value=st.session_state.countries_input
     )
+    st.session_state.countries_input = countries_input
     
     regions_input = st.sidebar.text_area(
         "Region List (comma separated)",
-        value="APAC, EMEA, EWAP, Global, INDIA, LATAM, MAJOREL, Specialized Services, TGI"
+        value=st.session_state.regions_input
     )
+    st.session_state.regions_input = regions_input
 
     compliance_input = st.sidebar.text_area(
         "Compliance List (comma separated)",
-        value="GDPR, CCPA, HIPAA, PCI, PCI DSS, ISO 27001, SOC 2, NIST, FISMA, GLBA, SOX, FedRAMP, CMMC, NIST 800-53, NIST 800-171, ISO 27701, ISO 22301, ISO 31000, ISO 9001, ISO 14001, ISO 45001, ISO 20000, ISO 27017, ISO 27018, ISO 27002, ISO 27005, ISO 27006, ISO 27007, ISO 27008, ISO 27009, ISO 27010, ISO 27011, ISO 27012, ISO 27013, ISO 27014, ISO 27015, ISO 27016, ISO 27019, ISO 27020, ISO 27021, ISO 27022, ISO 27023, ISO 27024, ISO 27025, ISO 27026, ISO 27027, ISO 27028, ISO 27029, ISO 27030, ISO 27031, ISO 27032, ISO 27033, ISO 27034, ISO 27035, ISO 27036, ISO 27037, ISO 27038, ISO 27039, ISO 27040, ISO 27041, ISO 27042, ISO 27043, ISO 27044, ISO 27045, ISO 27046, ISO 27047, ISO 27048, ISO 27049, ISO 27050, ISO 27051, ISO 27052, ISO 27053, ISO 27054, ISO 27055, ISO 27056, ISO 27057, ISO 27058, ISO 27059, ISO 27060, ISO 27061, ISO 27062, ISO 27063, ISO 27064, ISO 27065, ISO 27066, ISO 27067, ISO 27068, ISO 27069, ISO 27070, ISO 27071, ISO 27072, ISO 27073, ISO 27074, ISO 27075, ISO 27076, ISO 27077, ISO 27078, ISO 27079, ISO 27080, ISO 27081, ISO 27082, ISO 27083, ISO 27084, ISO 27085, ISO 27086, ISO 27087, ISO 27088, ISO 27089, ISO 27090, ISO 27091, ISO 27092, ISO 27093, ISO 27094, ISO 27095, ISO 27096, ISO 27097, ISO 27098, ISO 27099, ISO 27100"
+        value=st.session_state.compliance_input
     )
+    st.session_state.compliance_input = compliance_input
 
     business_unit_input = st.sidebar.text_area(
         "Business Unit List (comma separated)",
-        value="IT-SOFTWARE, CLIENT OPERATIONS, WORKFORCE, STAFF, CS-CLIENT SERVICES, BUSINESS DEVELOPMENT, OPS-CLIENT DELIVERY, HR, Client Operations, Workforce Management, WORKFORCE MANAGEMENT, Facilities, SALES, LC-AUDIT, FA-FP&A, HR-RECRUITMENT / TALENT ACQUISITION, Ops-Client Delivery, HR, MANAGEMENT/MANAGERS, Client Services, OPS-WORKFORCE MANAGEMENT, LEGAL, AF-PREMISES AND ADMINISTRATION, SUPPORT HELP DESK, HR-CROSS FUNCTION ROLES, Infrastructure Desktop, Quality Assurance, OPS-GLOBAL PROCESSES, STANDARDS AND CONTINUOUS IMPROVEMENT, SUPPORT ANALYST, DEVELOPMENT DEVELOPER, IT-INFRASTRUCTURE OPERATIONS, IT-INFORMATION SECURITY, Training, MANAGEMENT/MANAGERS, CLIENT, SUPPORT ADMINISTRATION, HR-TRAINING, IT, HUMAN RESOURCES, BUSINESS INTELLIGENCE, HR-PAYROLL, HR-LEARNING AND DEVELOPMENT AND ORGANIZATIONAL DEVELOPMENT, INFRASTRUCTURE DESKTOP, OPS-BUSINESS INTELLIGENCE AND REPORTING, TRAINING, RECRUITING, OPS-QUALITY ANALYSIS / CONTINUOUS IMPROVEMENT, STAFF, STAFF, OPS-CROSS FUNCTION ROLES, IT-SERVICE DESK AND IT SERVICE MANAGEMENT, QUALITY ASSURANCE, FINANCE, IT-SUPPORT SERVICES, FA-PROCUREMENT AND SUPPORT, MKT- CROSS FUNCTION ROLES, IT-DATA COE, MANAGEMENT/MANAGERS, TRAINING, INFRASTRUCTURE SYSTEMS, Support Help Desk, MARKETING, HR-ONBOARDING, AF-HEALTH AND SAFETY, Professional Services, FACILITIES, AF-MAINTENANCE, ADMINISTRATION, DEVELOPMENT SCRIPTING, BD-BUSINESS DEVELOPMENT, HR-Training, CLIENT SERVICES, CS-STRATEGIC ACCOUNT MANAGEMENT, IT-INFRASTRUCTURE ARCHITECTURE AND ENGINEERING, MANAGEMENT/MANAGERS, HR, SECURITY, PAYROLL, MANAGEMENT TRAINING DEVELOPMENT, ANALYST, DS-CROSS FUNCTION ROLES, RISK, Ops-Quality Analysis / Continuous Improvement, Finance, OPS-PROJECT MANAGEMENT, OPS-Cross Function Roles, PROCUREMENT, INFORMATION SECURITY, HR-EMPLOYEE RELATIONS, EXECUTIVE MANAGEMENT, FA-CROSS FUNCTION ROLES, LC-COMPLIANCE, IT-Service Desk and IT Service Management, BD-CROSS FUNCTION ROLES, APPLICATION SUPPORT, Ops-Workforce Management, STDS-ROLLOUT & AUDIT, DS-CONSULTING AND SOLUTIONING, IT-Infrastructure Operations, CS-Client Services, IT-Software, HR-HELP DESK, INFRASTRUCTURE TELECOM, HR-COMPENSATION AND BENEFITS, MKT-DIGITAL MARKETING, INFRASTRUCTURE NETWORK, LC-LEGAL, Business Development, HR-Cross Function Roles, FA-Cross Function Roles, FA-FINANCIAL SYSTEMS, TRANSFORMATION AND AUTOMATION, BD-SALES ENABLEMENT, MKT-WEB DESIGN, HR-Payroll, Marketing, IT-CROSS FUNCTION ROLES, BD-PRESALES, INFRASTRUCTURE DATABASE, Recruiting, BD-Business Development, SALES, CLIENT, EM-EXECUTIVE ASSISTANTS, IT, STAFF, Development Scripting, TRANSFORMATION, EXTERNAL, IT, MANAGEMENT/MANAGERS, HR-DIVERSITY, EQUITY AND INCLUSION, Management Training Development, CORPORATE COMPLIANCE, Infrastructure Database, Human Resources, SUPPORT PRODUCT MANAGEMENT, AF-CROSS FUNCTION ROLES, DS-DATA ANALYTICS, Transformation, SUPPORT PROJECT MANAGEMENT, Risk, STDS-IMPROVEMENT DELIVERY PERFORMANCE, STAFF, TRAINING, IT-Infrastructure Architecture and Engineering, Infrastructure Systems, STRATEGIC ACCOUNT MANAGEMENT, IT-PLATFORM ENGINEERING SOLUTIONS COE, BUSINESS OPERATIONS, AF-LOGISTICS AND WAREHOUSING, DS-Consulting and Solutioning, MKT-CONTENT DEVELOPMENT, EM-LOCAL EXECUTIVE MANAGEMENT TIER 3, STAFF, STAFF, STAFF, Ops-Business Intelligence and Reporting, Legal, EM-LOCAL EXECUTIVE MANAGEMENT, FA-TREASURY, STAFF, IT, Support Product Management, LC-DATA PRIVACY, AUDITOR, Business Operations, Ops-Project Management, Support Project Management, HR, MANAGEMENT/MANAGERS, TRAINING, Business Intelligence, EM-LOCAL EXECUTIVE MANAGEMENT TIER 1, DEVELOPMENT ARCHITECT, AF-Premises and Administration, TRAINING, MANAGEMENT/MANAGERS, Payroll, Procurement, AF-Maintenance, Ops-Global Processes, Standards and Continuous Improvement, IT, STAFF, STAFF, HR-Onboarding, IT, TRAINING, HR-Learning and Development and Organizational Development"
+        value=st.session_state.business_unit_input
     )
+    st.session_state.business_unit_input = business_unit_input
 
-    COUNTRY_LIST = [x.strip() for x in countries_input.split(",")]
-    REGION_LIST = [x.strip() for x in regions_input.split(",")]
-    COMPLIANCE_LIST = [x.strip() for x in compliance_input.split(",")]
-    BUSINESS_UNIT_LIST = [x.strip() for x in business_unit_input.split(",")]
+    COUNTRY_LIST = [x.strip() for x in st.session_state.countries_input.split(",")]
+    REGION_LIST = [x.strip() for x in st.session_state.regions_input.split(",")]
+    COMPLIANCE_LIST = [x.strip() for x in st.session_state.compliance_input.split(",")]
+    BUSINESS_UNIT_LIST = [x.strip() for x in st.session_state.business_unit_input.split(",")]
 
     # Build automatons once
     COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
@@ -490,57 +504,83 @@ if sidebar_visible:
     COMPLIANCE_AUTOMATON = build_automaton(COMPLIANCE_LIST)
     BUSINESS_UNIT_AUTOMATON = build_automaton(BUSINESS_UNIT_LIST)
 
-    with st.sidebar.expander("➕ Add Custom Extraction Categories"):
-        with st.form(key="custom_extraction_form"):
-            custom_category = st.text_input("Category Name (e.g., Product, Company)", key="category_input")
-            custom_keywords_input = st.text_area("Keywords (comma separated)", key="keywords_input")
-            submitted = st.form_submit_button("Add Custom Category")
+st.sidebar.markdown("---")  # Add a separator
 
-            if submitted:
-                if custom_category and custom_keywords_input:
-                    # Initialize custom categories if not exists
-                    if "custom_categories" not in st.session_state:
-                        st.session_state.custom_categories = {}
+# Add Custom Extraction Category section
+st.sidebar.markdown("### ➕ Add Custom Extraction Categories")
 
-                    # Prevent duplicate category overwrite unless intentional
-                    if custom_category in st.session_state.custom_categories:
-                        st.warning(f"⚠️ Category '{custom_category}' already exists. Choose another name.")
-                    else:
-                        keywords = [kw.strip() for kw in custom_keywords_input.split(",") if kw.strip()]
-                        automaton = build_automaton(keywords)
-                        st.session_state.custom_categories[custom_category] = {
-                            "keywords": keywords,
-                            "automaton": automaton
-                        }
-                        st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
-                        # Force a rerun to ensure the UI updates
-                        st.rerun()
-                else:
-                    st.error("❌ Please enter both a category name and at least one keyword.")
+# Initialize form state if not exists
+if 'form_submitted' not in st.session_state:
+    st.session_state.form_submitted = False
 
-    if "custom_categories" in st.session_state and st.session_state.custom_categories:
-        st.markdown("### 🗂️ Current Custom Categories")
+with st.sidebar.form(key="custom_extraction_form"):
+    # Only show empty inputs if form was just submitted
+    if st.session_state.form_submitted:
+        custom_category = st.text_input("Category Name (e.g., Product, Company)", value="", key="category_input")
+        custom_keywords_input = st.text_area("Keywords (comma separated)", value="", key="keywords_input")
+        st.session_state.form_submitted = False
+    else:
+        custom_category = st.text_input("Category Name (e.g., Product, Company)", key="category_input")
+        custom_keywords_input = st.text_area("Keywords (comma separated)", key="keywords_input")
+    
+    submitted = st.form_submit_button("Add Custom Category")
 
-        for cat_name, meta in st.session_state.custom_categories.items():
-            with st.expander(f"🔧 `{cat_name}` ({len(meta['keywords'])} keywords)"):
-                st.write(", ".join(meta["keywords"]))
+    if submitted:
+        if custom_category and custom_keywords_input:
+            # Initialize custom categories if not exists
+            if "custom_categories" not in st.session_state:
+                st.session_state.custom_categories = {}
 
-                # Optional: edit or delete
-                new_keywords = st.text_area(f"✏️ Edit keywords for `{cat_name}`", value=", ".join(meta["keywords"]), key=f"edit_{cat_name}")
-                if st.button(f"Update `{cat_name}`", key=f"update_{cat_name}"):
-                    new_kw_list = [kw.strip() for kw in new_keywords.split(",") if kw.strip()]
-                    st.session_state.custom_categories[cat_name]["keywords"] = new_kw_list
-                    st.session_state.custom_categories[cat_name]["automaton"] = build_automaton(new_kw_list)
-                    st.success(f"✅ Updated keywords for `{cat_name}`")
+            # Prevent duplicate category overwrite unless intentional
+            if custom_category in st.session_state.custom_categories:
+                st.warning(f"⚠️ Category '{custom_category}' already exists. Choose another name.")
+            else:
+                keywords = [kw.strip() for kw in custom_keywords_input.split(",") if kw.strip()]
+                automaton = build_automaton(keywords)
+                st.session_state.custom_categories[custom_category] = {
+                    "keywords": keywords,
+                    "automaton": automaton
+                }
+                st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
+                # Set flag to clear form on next render
+                st.session_state.form_submitted = True
+        else:
+            st.error("❌ Please enter both a category name and at least one keyword.")
 
-                if st.button(f"❌ Delete `{cat_name}`", key=f"delete_{cat_name}"):
-                    del st.session_state.custom_categories[cat_name]
-                    st.warning(f"🗑️ Deleted category `{cat_name}`")
-                    st.rerun()
+if "custom_categories" in st.session_state and st.session_state.custom_categories:
+    st.sidebar.markdown("### 🗂️ Current Custom Categories")
+    # Create a list of categories to iterate over
+    categories = list(st.session_state.custom_categories.items())
+    for cat_name, meta in categories:
+        with st.sidebar.expander(f"🔧 `{cat_name}` ({len(meta['keywords'])} keywords)"):
+            st.write(", ".join(meta["keywords"]))
 
+            # Optional: edit or delete
+            new_keywords = st.text_area(f"✏️ Edit keywords for `{cat_name}`", value=", ".join(meta["keywords"]), key=f"edit_{cat_name}")
+            if st.button(f"Update `{cat_name}`", key=f"update_{cat_name}"):
+                new_kw_list = [kw.strip() for kw in new_keywords.split(",") if kw.strip()]
+                st.session_state.custom_categories[cat_name]["keywords"] = new_kw_list
+                st.session_state.custom_categories[cat_name]["automaton"] = build_automaton(new_kw_list)
+                st.success(f"✅ Updated keywords for `{cat_name}`")
 
-else:
-    st.sidebar.write("Sidebar content is hidden.")
+            if st.button(f"❌ Delete `{cat_name}`", key=f"delete_{cat_name}"):
+                del st.session_state.custom_categories[cat_name]
+                st.warning(f"🗑️ Category `{cat_name}` has been deleted from the system. The UI will update on your next interaction.")
+
+st.sidebar.markdown("---")  # Add a separator
+
+# Data Filters Section
+st.sidebar.markdown("### 🔍 Data Filters")
+
+# Initialize session state for filters if not exists
+if 'active_filters' not in st.session_state:
+    st.session_state.active_filters = {}
+if 'filtered_data' not in st.session_state:
+    st.session_state.filtered_data = None
+
+# File Upload Section
+st.markdown("## Upload New File")
+uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith(".csv"):
@@ -640,115 +680,104 @@ else:
     df = None
     st.info("📂 Please upload a file to begin analysis.")
 
+# Create a form for filter selections
 if df is not None:
-    # Add Data Filtering Section in sidebar
-    if sidebar_visible:
-        st.sidebar.markdown("---")  # Add a separator
-        st.sidebar.markdown("### 🔍 Data Filters")
+    with st.sidebar.form(key="filter_form"):
+        st.markdown("### 🔍 Data Filters")
         
-        # Initialize session state for filters if not exists
-        if 'active_filters' not in st.session_state:
-            st.session_state.active_filters = {}
-        if 'filtered_data' not in st.session_state:
-            st.session_state.filtered_data = None
+        # Field selection for filtering
+        filter_fields = st.multiselect(
+            "Select fields to filter on",
+            options=df.columns.tolist(),
+            key="filter_fields"
+        )
         
-        # Create a form for filter selections
-        with st.sidebar.form(key="filter_form"):
-            st.markdown("### 🔍 Data Filters")
-            
-            # Field selection for filtering
-            filter_fields = st.multiselect(
-                "Select fields to filter on",
-                options=df.columns.tolist(),
-                key="filter_fields"
-            )
-            
-            # Dictionary to store filter selections
-            filter_selections = {}
-            
-            # Create filter widgets for each selected field
-            for field in filter_fields:
+        # Dictionary to store filter selections
+        filter_selections = {}
+        
+        # Create filter widgets for each selected field
+        for field in filter_fields:
+            try:
+                # Get available values from the original dataframe
+                non_null_mask = df[field].notna()
+                available_values = df.loc[non_null_mask, field].astype(str)
+                available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
+                available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
+                
+                # Get current selected values for this field
+                current_selected = [v for v in st.session_state.active_filters.get(field, []) if str(v) in available_values]
+                
+                # Create a multi-select widget for each field
+                selected_values = st.multiselect(
+                    f"Filter {field}",
+                    options=available_values,
+                    default=current_selected,
+                    key=f"filter_{field}"
+                )
+                
+                if selected_values:
+                    filter_selections[field] = selected_values
+                    
+            except Exception as e:
+                st.error(f"Error processing field {field}: {str(e)}")
+                continue
+        
+        # Add form submit and clear buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            apply_filters = st.form_submit_button("Apply Filters")
+        with col2:
+            clear_filters = st.form_submit_button("Clear All Filters")
+    
+    # Handle form submission
+    if apply_filters:
+        if filter_selections:
+            filtered_df = df.copy()
+            for field, values in filter_selections.items():
                 try:
-                    # Get available values from the original dataframe
-                    non_null_mask = df[field].notna()
-                    available_values = df.loc[non_null_mask, field].astype(str)
-                    available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
-                    available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
-                    
-                    # Get current selected values for this field
-                    current_selected = [v for v in st.session_state.active_filters.get(field, []) if str(v) in available_values]
-                    
-                    # Create a multi-select widget for each field
-                    selected_values = st.multiselect(
-                        f"Filter {field}",
-                        options=available_values,
-                        default=current_selected,
-                        key=f"filter_{field}"
-                    )
-                    
-                    if selected_values:
-                        filter_selections[field] = selected_values
-                        
+                    non_null_mask = filtered_df[field].notna()
+                    filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
+                    mask = filtered_df[field].isin([str(v) for v in values])
+                    filtered_df = filtered_df[mask]
                 except Exception as e:
-                    st.error(f"Error processing field {field}: {str(e)}")
+                    st.error(f"Error filtering field {field}: {str(e)}")
                     continue
             
-            # Add form submit and clear buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                apply_filters = st.form_submit_button("Apply Filters")
-            with col2:
-                clear_filters = st.form_submit_button("Clear All Filters")
-        
-        # Handle form submission
-        if apply_filters:
-            if filter_selections:
-                filtered_df = df.copy()
-                for field, values in filter_selections.items():
-                    try:
-                        non_null_mask = filtered_df[field].notna()
-                        filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
-                        mask = filtered_df[field].isin([str(v) for v in values])
-                        filtered_df = filtered_df[mask]
-                    except Exception as e:
-                        st.error(f"Error filtering field {field}: {str(e)}")
-                        continue
-                
-                # Update the filtered data and active filters
-                st.session_state.filtered_data = filtered_df
-                st.session_state.active_filters = filter_selections
-            else:
-                st.session_state.filtered_data = None
-                st.session_state.active_filters = {}
-            st.rerun()
-        
-        elif clear_filters:
-            st.session_state.active_filters = {}
+            # Update the filtered data and active filters
+            st.session_state.filtered_data = filtered_df
+            st.session_state.active_filters = filter_selections
+        else:
             st.session_state.filtered_data = None
-            st.rerun()
-        
-        # Show active filters if any
-        if st.session_state.active_filters:
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("#### Active Filters:")
-            for field, values in st.session_state.active_filters.items():
-                try:
-                    display_values = []
-                    for v in values:
-                        try:
-                            if pd.isna(v):
-                                continue
-                            display_values.append(str(v))
-                        except:
+            st.session_state.active_filters = {}
+        st.rerun()
+    
+    elif clear_filters:
+        st.session_state.active_filters = {}
+        st.session_state.filtered_data = None
+        st.rerun()
+    
+    # Show active filters if any
+    if st.session_state.active_filters:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### Active Filters:")
+        for field, values in st.session_state.active_filters.items():
+            try:
+                display_values = []
+                for v in values:
+                    try:
+                        if pd.isna(v):
                             continue
-                    if display_values:
-                        st.sidebar.markdown(f"- **{field}**: {', '.join(display_values)}")
-                except Exception as e:
-                    st.sidebar.error(f"Error displaying filter for {field}")
-        
-        # Use filtered data if available
-        if st.session_state.filtered_data is not None:
-            df = st.session_state.filtered_data
+                        display_values.append(str(v))
+                    except:
+                        continue
+                if display_values:
+                    st.sidebar.markdown(f"- **{field}**: {', '.join(display_values)}")
+            except Exception as e:
+                st.sidebar.error(f"Error displaying filter for {field}")
+    
+    # Use filtered data if available
+    if st.session_state.filtered_data is not None:
+        df = st.session_state.filtered_data
 
     st.markdown("## Field-wise Summary")
     st.subheader("🧾 Field-wise Summary")
@@ -1185,7 +1214,7 @@ if df is not None:
             st.write("No business units were extracted from the data.")
 
     # --- Custom Extraction Summary ---
-    if "custom_categories" in st.session_state and df is not None:
+    if "custom_categories" in st.session_state and st.session_state.custom_categories and len(st.session_state.custom_categories) > 0:
         st.markdown("## 🧠 Custom Extraction Insights")
         
         with st.expander("🔧 Debug: Current Custom Categories"):
@@ -1251,9 +1280,11 @@ if st.button("💾 Save Session"):
     if 'df' in locals() and df is not None:
         session_data = {
             "dataframe": df,
-            "primary_keys": primary_keys,
-            "countries_input": countries_input,
-            "regions_input": regions_input,
+            "primary_keys": primary_keys if 'primary_keys' in locals() else None,
+            "countries_input": st.session_state.get('countries_input', ""),
+            "regions_input": st.session_state.get('regions_input', ""),
+            "compliance_input": st.session_state.get('compliance_input', ""),
+            "business_unit_input": st.session_state.get('business_unit_input', ""),
             "custom_categories": {
                 cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
             }
