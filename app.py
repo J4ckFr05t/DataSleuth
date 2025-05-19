@@ -446,7 +446,7 @@ toc = """
 if st.session_state.get('sidebar_visible', True):
     toc += "\n- [Country/Region Extraction Insights](#country-region-extraction-insights)"
 
-# Append custom categories to the TOC if present, regardless of sidebar visibility
+# Append custom categories to the TOC if present
 if "custom_categories" in st.session_state and st.session_state.custom_categories:
     toc += "\n- [Custom Extraction Insights](#custom-extraction-insights)"
 
@@ -544,6 +544,8 @@ with st.sidebar.form(key="custom_extraction_form"):
                 st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
                 # Set flag to clear form on next render
                 st.session_state.form_submitted = True
+                # Force a rerun to update the TOC
+                st.rerun()
         else:
             st.error("❌ Please enter both a category name and at least one keyword.")
 
@@ -562,10 +564,14 @@ if "custom_categories" in st.session_state and st.session_state.custom_categorie
                 st.session_state.custom_categories[cat_name]["keywords"] = new_kw_list
                 st.session_state.custom_categories[cat_name]["automaton"] = build_automaton(new_kw_list)
                 st.success(f"✅ Updated keywords for `{cat_name}`")
+                # Force a rerun to update the TOC
+                st.rerun()
 
             if st.button(f"❌ Delete `{cat_name}`", key=f"delete_{cat_name}"):
                 del st.session_state.custom_categories[cat_name]
                 st.warning(f"🗑️ Category `{cat_name}` has been deleted from the system. The UI will update on your next interaction.")
+                # Force a rerun to update the TOC
+                st.rerun()
 
 st.sidebar.markdown("---")  # Add a separator
 
@@ -583,6 +589,17 @@ st.markdown("## Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
 if uploaded_file is not None:
+    # Store the uploaded file in session state
+    st.session_state.uploaded_file = uploaded_file
+    st.session_state.file_name = uploaded_file.name
+
+# Check if we have a stored file in session state
+if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not None:
+    uploaded_file = st.session_state.uploaded_file
+    
+    # Reset the file pointer to the beginning
+    uploaded_file.seek(0)
+    
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     elif uploaded_file.name.endswith(".json"):
@@ -592,6 +609,8 @@ if uploaded_file is not None:
         except Exception as e:
             # If that fails, try to read as JSON lines
             try:
+                # Reset file pointer again before trying JSON lines
+                uploaded_file.seek(0)
                 df = pd.read_json(uploaded_file, lines=True)
             except Exception as e2:
                 st.error(f"Error reading JSON file: {str(e2)}")
@@ -601,6 +620,9 @@ if uploaded_file is not None:
         try:
             # Read the XML file content
             xml_content = uploaded_file.read()
+            
+            # Reset file pointer for future reads
+            uploaded_file.seek(0)
             
             # Try to parse as XML
             try:
@@ -673,8 +695,12 @@ if uploaded_file is not None:
             df = None
     else:
         df = pd.read_excel(uploaded_file)
+    
+    # Store the dataframe in session state
+    st.session_state.df = df
     st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
-elif "df" in locals():
+elif "df" in st.session_state:
+    df = st.session_state.df
     st.info("ℹ️ Using data loaded from session file.")
 else:
     df = None
@@ -1295,7 +1321,7 @@ if st.button("💾 Save Session"):
         os.makedirs(save_dir, exist_ok=True)
 
         # Build filename: <original_filename>_<timestamp>.pkl
-        original_filename = uploaded_file.name.rsplit('.', 1)[0] if uploaded_file else "session"
+        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         full_filename = f"{original_filename}_{timestamp}.pkl"
         save_path = os.path.join(save_dir, full_filename)
