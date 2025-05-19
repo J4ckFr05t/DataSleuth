@@ -12,20 +12,25 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
             'text_content': []
         }
         
-        col_data = col_data.dropna()
+        # Calculate coverage before dropping nulls
         coverage = 100 - (col_data.isnull().sum() / total_records * 100)
         coverage = max(0, min(100, float(coverage) if pd.notna(coverage) else 0))
         
         insights['text_content'].append(f"Coverage: {coverage:.2f}%")
+        
+        # Get value counts including NULL values
+        top_n = 10
+        # Create a copy of the data with NULL values represented as a string
+        col_data_with_nulls = col_data.copy()
+        col_data_with_nulls[col_data_with_nulls.isna()] = "NULL"
+        val_counts_total = col_data_with_nulls.value_counts().head(top_n)
+        percent_total = (val_counts_total / total_records * 100).round(2)
+        unique_in_top_n = len(val_counts_total)
+
+        # Now drop nulls for the rest of the processing
+        col_data = col_data.dropna()
         nunique = col_data.nunique()
         is_numeric = pd.api.types.is_numeric_dtype(col_data)
-
-        # Initialize val_counts_total for all cases
-        top_n = 10
-        val_counts_total = col_data.value_counts().head(top_n)
-        percent_total = (val_counts_total / total_records * 100).round(2)
-        # Get number of unique values in the top N values
-        unique_in_top_n = len(val_counts_total)
 
         if nunique == total_records:
             value_counts = col_data.value_counts().reset_index()
@@ -92,13 +97,14 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
                 try:
                     # Create a DataFrame with just the columns we need
                     temp_df = original_df[primary_keys + [col_name]].copy()
-                    # Drop rows where any of the primary keys or the column is null
-                    temp_df = temp_df.dropna(subset=primary_keys + [col_name])
+                    # Include NULL values in the counts
+                    temp_df_with_nulls = temp_df.copy()
+                    temp_df_with_nulls[col_name] = temp_df_with_nulls[col_name].fillna("NULL")
                     # Drop duplicates based on primary keys
-                    temp_df = temp_df.drop_duplicates(subset=primary_keys)
+                    temp_df_with_nulls = temp_df_with_nulls.drop_duplicates(subset=primary_keys)
                     
-                    grouped_counts = temp_df[col_name].value_counts().head(top_n)
-                    percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
+                    grouped_counts = temp_df_with_nulls[col_name].value_counts().head(top_n)
+                    percent_keys = (grouped_counts / temp_df_with_nulls.shape[0] * 100).round(2)
                     unique_in_top_n_pk = len(grouped_counts)
                     
                     chart_df2 = pd.DataFrame({
@@ -115,7 +121,7 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
                         "Count": grouped_counts.values,
                         "Percentage (%)": percent_keys
                     })
-                    percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
+                    percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df_with_nulls.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
                     percent_key_table["Percentage (%)"] = percent_key_table["Percentage (%)"].astype(float)
                     insights['tables'].append(('value_counts_pk', percent_key_table))
                 except Exception as e:
