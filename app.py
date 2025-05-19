@@ -13,7 +13,146 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from lxml import etree
 import xmltodict
+import multiprocessing
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import numpy as np
+from column_processor import process_single_column
+import plotly.express as px
+import plotly.graph_objects as go
 
+def process_patterns_parallel(col_data, col_name):
+    """Process patterns for a single column in parallel"""
+    try:
+        patterns = col_data.apply(detect_pattern)
+        pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
+        total = pattern_counts.sum()
+
+        if total == 0:
+            return []
+
+        pattern_info = []
+        for pat, count in pattern_counts.items():
+            example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
+            confidence = round((count / total) * 100, 2)
+            pattern_info.append({
+                "Field": col_name,
+                "Pattern": pat,
+                "Example": example if example else "",
+                "Confidence (%)": confidence
+            })
+        return pattern_info
+    except Exception as e:
+        st.error(f"Error processing patterns for field {col_name}: {str(e)}")
+        return []
+
+def process_extraction_parallel(col_data, col_name, total_records, extraction_func):
+    """Process extractions (country/region/business unit) for a single column in parallel"""
+    try:
+        results = col_data.apply(lambda x: (x, extraction_func(x)))
+        records_processed = len(col_data)
+        
+        # Initialize counters for each category
+        counts = {
+            'countries': {},
+            'regions': {},
+            'compliance': {},
+            'business_unit': {}
+        }
+        evidence = {
+            'countries': {},
+            'regions': {},
+            'compliance': {},
+            'business_unit': {}
+        }
+        
+        # Track unique records with matches for each category
+        unique_records = {
+            'countries': set(),
+            'regions': set(),
+            'compliance': set(),
+            'business_unit': set()
+        }
+        
+        # Process results
+        for idx, (val, res) in enumerate(results):
+            # Process each category explicitly
+            for category in ['countries', 'regions', 'compliance', 'business_unit']:
+                if category in res and res[category]:  # Check if category exists and has values
+                    unique_records[category].add(idx)  # Add record index to unique set
+                    for item in res[category]:
+                        counts[category][item] = counts[category].get(item, 0) + 1
+                        if item not in evidence[category]:
+                            evidence[category][item] = val
+
+        # Calculate coverage and create summary
+        summary_data = []
+        category_mapping = {
+            'countries': 'Countries',
+            'regions': 'Regions',
+            'compliance': 'Compliance',
+            'business_unit': 'Business Units'
+        }
+        
+        for category, display_name in category_mapping.items():
+            if counts[category]:  # Only process if we found any matches
+                unique_matches = len(unique_records[category])
+                coverage_percentage = (unique_matches / total_records) * 100
+                
+                summary_data.append({
+                    'Field': col_name,
+                    f'{display_name} Found': ', '.join(sorted(counts[category].keys())),
+                    'Coverage': f"{unique_matches} ({coverage_percentage:.2f}%)",
+                    'Evidence': [evidence[category][c] for c in sorted(counts[category].keys())],
+                    'Records Processed': records_processed
+                })
+        
+        return summary_data
+    except Exception as e:
+        st.error(f"Error processing extractions for field {col_name}: {str(e)}")
+        return []
+
+def process_custom_extraction_parallel(col_data, col_name, total_records, category_name, automaton):
+    """Process custom extractions for a single column in parallel"""
+    try:
+        results = []
+        unique_matches = set()  # Track unique records with matches
+        
+        for idx, val in enumerate(col_data):
+            val_lower = str(val).lower()
+            matches = set()
+            for _, (_, match) in automaton.iter(val_lower):
+                if is_valid_match(match.lower(), val_lower):
+                    matches.add(match)
+            if matches:  # If we found any matches
+                unique_matches.add(idx)  # Add record index to unique set
+            results.append((val, list(matches)))
+
+        match_counts = {}
+        match_evidence = {}
+        records_processed = len(col_data)
+
+        for val, matches in results:
+            for m in matches:
+                match_counts[m] = match_counts.get(m, 0) + 1
+                if m not in match_evidence:
+                    match_evidence[m] = val
+
+        if match_counts:
+            unique_match_count = len(unique_matches)
+            coverage_percentage = (unique_match_count / total_records) * 100
+
+            return [{
+                "Field": col_name,
+                f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
+                "Coverage": f"{unique_match_count} ({coverage_percentage:.2f}%)",
+                "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
+                "Records Processed": records_processed
+            }]
+        return []
+    except Exception as e:
+        st.error(f"Error processing custom extraction for field {col_name}: {str(e)}")
+        return []
 
 def simplify_dtype(dtype):
     if pd.api.types.is_integer_dtype(dtype): return "int"
@@ -170,19 +309,82 @@ def create_bar_chart(df, x_col, y_col, title, color_scheme='blues'):
     # Shorten labels if needed
     df[y_col] = shorten_labels(df[y_col].astype(str))
     
+    # Calculate percentages for tooltip
+    total = df[x_col].sum()
+    df['percentage'] = (df[x_col] / total * 100).round(1)
+    
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X(f'{x_col}:Q', title=x_col),
         y=alt.Y(f'{y_col}:N', 
                 sort='-x', 
                 title=y_col,
                 axis=alt.Axis(labelLimit=0)),  # This ensures labels are not truncated
-        color=alt.Color(f'{x_col}:Q', scale=alt.Scale(scheme=color_scheme))
+        color=alt.Color(f'{x_col}:Q', scale=alt.Scale(scheme=color_scheme)),
+        tooltip=[
+            alt.Tooltip(f'{y_col}:N', title='Value'),
+            alt.Tooltip(f'{x_col}:Q', title='Count'),
+            alt.Tooltip('percentage:Q', title='Percentage', format='.1f')
+        ]
     ).properties(
         width=600,
         height=max(400, len(df) * 25),  # Dynamic height based on number of bars
         title=title
     )
-    return chart
+    
+    return chart  # Removed the text layer that was adding labels on bars
+
+def render_donut_chart(df, x_col, y_col, title, color_scheme='blues'):
+    """Helper function to create consistent donut charts with proper label handling"""
+    # Shorten labels if needed
+    df[y_col] = shorten_labels(df[y_col].astype(str))
+    
+    # Calculate percentages for the labels
+    total = df[x_col].sum()
+    df['percentage'] = (df[x_col] / total * 100).round(1)
+    df['label'] = df[y_col] + ' (' + df[x_col].astype(str) + ', ' + df['percentage'].astype(str) + '%)'
+    
+    # Define color schemes
+    color_schemes = {
+        'blues': ['#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c'],
+        'greens': ['#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd']
+    }
+    
+    # Get colors based on scheme
+    colors = color_schemes.get(color_scheme, color_schemes['blues'])
+    # Repeat colors if needed
+    colors = colors * (len(df) // len(colors) + 1)
+    colors = colors[:len(df)]
+    
+    # Create the donut chart using Plotly
+    fig = go.Figure(data=[go.Pie(
+        labels=df['label'],  # Use the combined label
+        values=df[x_col],
+        hole=.5,
+        textinfo='label',
+        hovertemplate='%{label}<br>Count: %{value}<br>Percentage: %{percent:.1%}<extra></extra>',
+        marker=dict(colors=colors)
+    )])
+    
+    fig.update_traces(
+        textposition='outside'
+    )
+    
+    fig.update_layout(
+        title=title,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5
+        ),
+        height=500,
+        width=800,
+        margin=dict(t=50, b=50, l=50, r=50)
+    )
+    
+    return fig
 
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
@@ -625,50 +827,68 @@ if df is not None:
 
     st.markdown("## Per Field Insights")
     st.subheader("📌 Per Field Insights")
-    for col in df.columns:
-        st.markdown(f"### 🧬 {col}")
-        col_data = df[col].dropna()
-        total = len(df)
-        # Calculate coverage percentage safely
-        coverage = 100 - (df[col].isnull().sum() / len(df) * 100)
-        # Ensure coverage is a valid number between 0 and 100
-        coverage = max(0, min(100, float(coverage) if pd.notna(coverage) else 0))
+    
+    # Get the number of CPU cores available
+    num_cores = multiprocessing.cpu_count()
+    # Use 75% of available cores to avoid overwhelming the system
+    num_workers = max(1, int(num_cores * 0.75))
+    
+    # Create a progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Process columns in parallel
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        # Create a partial function with the common arguments
+        process_func = partial(process_single_column, 
+                             total_records=len(df),
+                             primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                             original_df=df)  # Pass the original DataFrame
         
-        # Use the safe coverage value for the progress bar
-        st.progress(coverage/100, text=f"Coverage: {coverage:.2f}%")
-        nunique = col_data.nunique()
-        is_numeric = pd.api.types.is_numeric_dtype(col_data)
-
-        if nunique == total:
-            with st.expander("📋 View Unique Values (with counts)"):
-                value_counts = col_data.value_counts().reset_index()
-                value_counts.columns = ["Value", "Count"]
-                value_counts = value_counts.sort_values("Count", ascending=False)
-                st.dataframe(value_counts, use_container_width=True)
-        elif not is_numeric:
+        # Submit all columns for processing
+        future_to_col = {
+            executor.submit(process_func, df[col], col): col 
+            for col in df.columns
+        }
+        
+        # Process results as they complete
+        total_columns = len(df.columns)
+        completed = 0
+        
+        for future in as_completed(future_to_col):
+            col = future_to_col[future]
+            completed += 1
+            progress_bar.progress(completed / total_columns)
+            status_text.text(f"Processing column {completed}/{total_columns}: {col}")
+            
             try:
-                # Try parsing as datetime
-                parsed_col = pd.to_datetime(col_data, errors="coerce", infer_datetime_format=True)
-                if parsed_col.notna().sum() == 0 and pd.api.types.is_numeric_dtype(col_data):
-                    parsed_col = pd.to_datetime(col_data, errors="coerce", unit="ms")
-                    if parsed_col.notna().sum() == 0:
-                        parsed_col = pd.to_datetime(col_data, errors="coerce", unit="s")
-
-                if parsed_col.notna().sum() > 0:
+                insights = future.result()
+                
+                # Display the insights for this column
+                st.markdown(f"### 🧬 {insights['column_name']}")
+                
+                if 'error' in insights:
+                    st.error(f"Error processing column: {insights['error']}")
+                    continue
+                
+                # Display coverage
+                if insights['text_content']:
+                    st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
+                              text=insights['text_content'][0])
+                
+                # Handle datetime columns
+                if insights.get('is_datetime'):
                     st.markdown("#### 📈 Trend (Date/Time Field)")
-
-                    temp_df = df.copy()
-                    temp_df['__datetime__'] = parsed_col
-                    temp_df = temp_df.dropna(subset=['__datetime__'])
-
-                    # UI: frequency selection
+                    parsed_col = insights['parsed_datetime']
+                    
+                    # Create datetime visualization UI
                     freq = st.selectbox(
                         f"Choose trend resolution for `{col}`",
                         options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
                         index=0,
                         key=f"freq_{col}"
                     )
-
+                    
                     freq_map = {
                         "Daily": "D",
                         "Weekly": "W",
@@ -676,16 +896,23 @@ if df is not None:
                         "Quarterly": "Q",
                         "Yearly": "Y"
                     }
-
-                    # Add checkbox to toggle between all dates and date range
+                    
                     show_all_dates = st.checkbox(
                         f"Show all dates for `{col}`",
                         value=False,
                         key=f"show_all_{col}"
                     )
-
+                    
+                    # Get the original index of non-null datetime values
+                    valid_datetime_mask = parsed_col.notna()
+                    original_indices = parsed_col.index[valid_datetime_mask]
+                    
+                    # Create a DataFrame with the datetime column and original index
+                    datetime_df = pd.DataFrame({
+                        '__datetime__': parsed_col[valid_datetime_mask]
+                    }, index=original_indices)
+                    
                     if not show_all_dates:
-                        # UI: date range picker (only show if not showing all dates)
                         min_date = parsed_col.min().date()
                         max_date = parsed_col.max().date()
                         start_date, end_date = st.date_input(
@@ -695,154 +922,92 @@ if df is not None:
                             max_value=max_date,
                             key=f"range_{col}"
                         )
-
-                        # Filter by date range
-                        filtered_df = temp_df[
-                            (temp_df['__datetime__'].dt.date >= start_date) &
-                            (temp_df['__datetime__'].dt.date <= end_date)
-                        ].copy()
+                        
+                        # Filter the datetime DataFrame using boolean indexing
+                        date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
+                                  (datetime_df['__datetime__'].dt.date <= end_date)
+                        filtered_df = datetime_df[date_mask].copy()
                     else:
-                        # Use all dates
-                        filtered_df = temp_df.copy()
-
-                    resampled = filtered_df.set_index("__datetime__").resample(freq_map[freq])
-
+                        filtered_df = datetime_df.copy()
+                    
+                    # Resample and count records
+                    resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
                     record_counts = resampled.size().rename("Total Records")
                     chart_df = pd.DataFrame(record_counts)
-
+                    
                     if primary_keys:
-                        unique_keys_df = filtered_df.drop_duplicates(subset=primary_keys)
-                        unique_counts = unique_keys_df.set_index("__datetime__").resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                        # Create a DataFrame with primary keys and datetime using the same filtered indices
+                        pk_datetime_df = pd.DataFrame({
+                            '__datetime__': filtered_df['__datetime__'],
+                            **{pk: df.loc[filtered_df.index, pk] for pk in primary_keys}
+                        })
+                        
+                        # Drop duplicates based on primary keys and resample
+                        unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
+                        unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
                         chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
-
+                    
                     st.line_chart(chart_df)
-                    continue  # Skip to next column
-            except Exception:
-                pass
-
-            avg_str_len = col_data.astype(str).apply(len).mean()
-
-            if avg_str_len > 50:
-                st.markdown("#### ☁️ Word Cloud (Long Text Field)")
-
-                # Pre-filter to only include meaningful values
-                filtered_values = col_data.dropna().astype(str).tolist()
-                filtered_values = [val for val in filtered_values if any(c.isalpha() for c in val)]
-                text = ' '.join(filtered_values).strip()
-
-                try:
-                    if text:
-                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(text)
+                    continue
+                
+                # Display wordcloud if available
+                if 'wordcloud_text' in insights:
+                    st.markdown("#### ☁️ Word Cloud (Long Text Field)")
+                    try:
+                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
                         fig, ax = plt.subplots(figsize=(10, 5))
-                        fig.patch.set_alpha(0)  # 🔥 Removes the white border
+                        fig.patch.set_alpha(0)
                         ax.imshow(wordcloud, interpolation='bilinear')
                         ax.axis("off")
                         st.pyplot(fig)
-                    else:
-                        raise ValueError("No valid words")
-                except Exception as e:
-                    st.warning("⚠️ Word cloud not generated due to non-textual content. Falling back to bar chart.")
-
-                    # Fall back to bar chart
-                    top_n = 10
-                    val_counts_total = df[col].value_counts().head(top_n)
-                    percent_total = (val_counts_total / total * 100).round(2)
-
-                    chart_df = pd.DataFrame({
-                        col: val_counts_total.index.tolist(),
-                        'Occurrences': val_counts_total.values
-                    })
-
-                    # Use the new helper function for consistent bar charts
-                    chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
-                    st.altair_chart(chart, use_container_width=True)
-            else:
-                top_n = 10
-
-                st.markdown("#### Top Values (All Rows)")
-                val_counts_total = df[col].value_counts().head(top_n)
-                percent_total = (val_counts_total / total * 100).round(2)
-
-                # Create a DataFrame for Altair
-                chart_df = pd.DataFrame({
-                    col: val_counts_total.index.tolist(),
-                    'Occurrences': val_counts_total.values
-                })
-
-                # Use the new helper function for consistent bar charts
-                chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
-                st.altair_chart(chart, use_container_width=True)
-
-            # Create a table showing values, counts, and percentages
-            percent_table = pd.DataFrame({
-                "Value": val_counts_total.index,
-                "Count": val_counts_total.values,
-                "Percentage (%)": percent_total
-            })
-
-            # Add total count to the table
-            percent_table = pd.concat([percent_table, pd.DataFrame([["Total", total, "100"]], columns=percent_table.columns)], ignore_index=True)
-
-            percent_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
-
-            st.markdown("### 📊 Value Counts and Percentages")
-            st.dataframe(percent_table, use_container_width=True)
-
-            # Determine primary key(s)
-            primary_keys = manual_keys if 'manual_keys' in locals() and manual_keys else auto_keys if 'auto_keys' in locals() and auto_keys else []
-
-            if primary_keys:
-                try:
-                    temp_df = df[primary_keys + [col]].dropna().drop_duplicates(subset=primary_keys)
-                    grouped_counts = temp_df[col].value_counts().head(top_n)
-                    percent_keys = (grouped_counts / temp_df.shape[0] * 100).round(2)
-
-                    # Make sure grouped_counts is already computed correctly
-                    chart_df2 = pd.DataFrame({
-                        col: grouped_counts.index.tolist(),
-                        'Occurrences': grouped_counts.values
-                    })
-
-                    # Use the new helper function for consistent bar charts
-                    chart2 = create_bar_chart(chart_df2, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
-                    st.markdown("#### Top Values (Per Primary Key)")
-                    st.altair_chart(chart2, use_container_width=True)
-
-
-                    # Create a table showing per primary key values, counts, and percentages
-                    percent_key_table = pd.DataFrame({
-                        "Value": grouped_counts.index,
-                        "Count": grouped_counts.values,
-                        "Percentage (%)": percent_keys
-                    })
-
-                    # Add total count to the table
-                    percent_key_table = pd.concat([percent_key_table, pd.DataFrame([["Total", temp_df.shape[0], "100"]], columns=percent_key_table.columns)], ignore_index=True)
-
-                    percent_key_table["Percentage (%)"] = percent_table["Percentage (%)"].astype(float)
-
-                    st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
-                    st.dataframe(percent_key_table, use_container_width=True)
-
-                except Exception as e:
-                    st.error(f"⚠️ Error generating primary key-based chart: {e}")
-            else:
-                st.info("ℹ️ No primary key selected or detected, so primary key based chart is skipped.")
-        else:
-            chart_df = pd.DataFrame({col: col_data})
-
-            # Create histogram with Altair
-            hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
-                alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
-                y=alt.Y('count()', title='Count')
-            ).properties(
-                width=600,
-                height=300,
-                title="Distribution"
-            )
-
-            st.altair_chart(hist, use_container_width=True)
-
+                    except Exception as e:
+                        st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
+                
+                # Display charts
+                for chart_type, chart_df in insights['charts']:
+                    if chart_type == 'bar_chart':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'bar_chart_pk':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Top Values (Per Primary Key)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'donut_chart':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                        st.plotly_chart(fig, use_container_width=True)
+                    elif chart_type == 'donut_chart_pk':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Value Distribution (Per Primary Key)")
+                        st.plotly_chart(fig, use_container_width=True)
+                    elif chart_type == 'histogram':
+                        hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                            alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                            y=alt.Y('count()', title='Count')
+                        ).properties(
+                            width=600,
+                            height=300,
+                            title="Distribution"
+                        )
+                        st.altair_chart(hist, use_container_width=True)
+                
+                # Display tables
+                for table_type, table_df in insights['tables']:
+                    if table_type == 'value_counts':
+                        st.markdown("### 📊 Value Counts and Percentages")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'value_counts_pk':
+                        st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'Unique Values':
+                        with st.expander("📋 View Unique Values (with counts)"):
+                            st.dataframe(table_df, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"Error displaying results for column {col}: {str(e)}")
+    
+    # Clear the progress bar and status text
+    progress_bar.empty()
+    status_text.empty()
 
     st.markdown("## Pattern Detection")
     st.subheader("🔍 Pattern Detection")
@@ -862,38 +1027,36 @@ if df is not None:
     - **?** = Other
     """)
 
-    all_pattern_info = []
+    # Create progress bar for pattern detection
+    pattern_progress = st.progress(0)
+    pattern_status = st.empty()
 
-    for col in df.columns:
-        try:
-            col_data = df[col].dropna().astype(str)
-            if len(col_data) == 0:  # Skip if no data after filtering
-                continue
-                
-            patterns = col_data.apply(detect_pattern)
+    # Process patterns in parallel
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        pattern_futures = {
+            executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
+            for col in df.columns
+        }
+        
+        all_pattern_info = []
+        total_columns = len(df.columns)
+        completed = 0
+        
+        for future in as_completed(pattern_futures):
+            col = pattern_futures[future]
+            completed += 1
+            pattern_progress.progress(completed / total_columns)
+            pattern_status.text(f"Processing patterns for column {completed}/{total_columns}: {col}")
+            
+            try:
+                pattern_info = future.result()
+                all_pattern_info.extend(pattern_info)
+            except Exception as e:
+                st.error(f"Error processing patterns for column {col}: {str(e)}")
 
-            # Count pattern frequencies
-            pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
-            total = pattern_counts.sum()
-
-            if total == 0:  # Skip if no patterns found
-                continue
-
-            pattern_info = []
-            for pat, count in pattern_counts.items():
-                example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
-                confidence = round((count / total) * 100, 2)
-                pattern_info.append({
-                    "Field": col,
-                    "Pattern": pat,
-                    "Example": example if example else "",
-                    "Confidence (%)": confidence
-                })
-
-            all_pattern_info.extend(pattern_info)
-        except Exception as e:
-            st.error(f"Error processing patterns for field {col}: {str(e)}")
-            continue
+    # Clear progress indicators
+    pattern_progress.empty()
+    pattern_status.empty()
 
     pattern_df = pd.DataFrame(all_pattern_info)
 
@@ -921,85 +1084,76 @@ if df is not None:
             st.info("No patterns to export.")
 
     if sidebar_visible:
-        # Assuming extract_country_region and shorten_labels functions are defined elsewhere.
-
         st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
+
+        # Create progress bar for extractions
+        extraction_progress = st.progress(0)
+        extraction_status = st.empty()
+
+        # Process extractions in parallel
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            extraction_futures = {
+                executor.submit(
+                    process_extraction_parallel,
+                    df[col].dropna(),
+                    col,
+                    len(df),
+                    extract_country_region
+                ): col 
+                for col in df.select_dtypes(include=['object', 'string']).columns
+            }
+            
+            all_extraction_data = []
+            total_columns = len(df.select_dtypes(include=['object', 'string']).columns)
+            completed = 0
+            
+            for future in as_completed(extraction_futures):
+                col = extraction_futures[future]
+                completed += 1
+                extraction_progress.progress(completed / total_columns)
+                extraction_status.text(f"Processing extractions for column {completed}/{total_columns}: {col}")
+                
+                try:
+                    extraction_data = future.result()
+                    if extraction_data:  # Only extend if we got results
+                        all_extraction_data.extend(extraction_data)
+                except Exception as e:
+                    st.error(f"Error processing extractions for column {col}: {str(e)}")
+
+        # Clear progress indicators
+        extraction_progress.empty()
+        extraction_status.empty()
+
+        # Process results by category
         summary_data = []
         region_summary_data = []
+        compliance_summary_data = []
+        business_unit_summary_data = []
 
-        # Get the total number of records in the DataFrame
-        total_records = len(df)
+        for data in all_extraction_data:
+            if 'Countries Found' in data:
+                summary_data.append(data)
+            if 'Regions Found' in data:
+                region_summary_data.append(data)
+            if 'Compliance Found' in data:
+                compliance_summary_data.append(data)
+            if 'Business Units Found' in data:
+                business_unit_summary_data.append(data)
 
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values  # No sampling
-            records_processed = len(sampled_values)
-
-            # Apply extraction
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-
-            country_counts = {}
-            country_evidence = {}
-
-            region_counts = {}
-            region_evidence = {}
-
-            for val, res in results:
-                for c in res['countries']:
-                    country_counts[c] = country_counts.get(c, 0) + 1
-                    if c not in country_evidence:
-                        country_evidence[c] = val  # first evidence sample
-
-                for c in res['regions']:
-                    region_counts[c] = region_counts.get(c, 0) + 1
-                    if c not in region_evidence:
-                        region_evidence[c] = val  # first evidence sample
-
-            # Create country summary if countries found
-            if country_counts:
-                # Count records that have at least one country
-                records_with_countries = sum(1 for _, res in results if res['countries'])
-                coverage_percentage = (records_with_countries / total_records) * 100
-
-                summary_data.append({
-                    'Field': col,
-                    'Countries Found': ', '.join(sorted(country_counts.keys())),
-                    'Coverage': f"{records_with_countries} ({coverage_percentage:.2f}%)",
-                    'Evidence': [country_evidence[c] for c in sorted(country_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-            # Create region summary if regions found
-            if region_counts:
-                # Count records that have at least one region
-                records_with_regions = sum(1 for _, res in results if res['regions'])
-                coverage_percentage = (records_with_regions / total_records) * 100
-
-                region_summary_data.append({
-                    'Field': col,
-                    'Regions Found': ', '.join(sorted(region_counts.keys())),
-                    'Coverage': f"{records_with_regions} ({coverage_percentage:.2f}%)",
-                    'Evidence': [region_evidence[c] for c in sorted(region_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        # Create DataFrames for both summaries
+        # Create DataFrames for summaries
         summary_df = pd.DataFrame(summary_data) if summary_data else pd.DataFrame()
         region_summary_df = pd.DataFrame(region_summary_data) if region_summary_data else pd.DataFrame()
+        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
+        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
 
-        # Show both summaries
+        # Display summaries
         if not summary_df.empty:
             st.write("### 🌍 Country Extraction Summary by Column")
             st.dataframe(summary_df)
             with st.expander("📤 Export Country Results"):
                 csv = summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="country_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="country_extraction.csv", mime="text/csv")
         else:
             st.write("No countries were extracted from the data.")
 
@@ -1008,112 +1162,32 @@ if df is not None:
             st.dataframe(region_summary_df)
             with st.expander("📤 Export Region Results"):
                 csv = region_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="region_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="region_extraction.csv", mime="text/csv")
         else:
             st.write("No regions were extracted from the data.")
-
-        # Add Compliance Summary
-        compliance_summary_data = []
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values
-            records_processed = len(sampled_values)
-            
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-            
-            compliance_counts = {}
-            compliance_evidence = {}
-            
-            for val, res in results:
-                for c in res['compliance']:
-                    compliance_counts[c] = compliance_counts.get(c, 0) + 1
-                    if c not in compliance_evidence:
-                        compliance_evidence[c] = val
-
-            if compliance_counts:
-                records_with_compliance = sum(1 for _, res in results if res['compliance'])
-                coverage_percentage = (records_with_compliance / total_records) * 100
-
-                compliance_summary_data.append({
-                    'Field': col,
-                    'Compliance Found': ', '.join(sorted(compliance_counts.keys())),
-                    'Coverage': f"{records_with_compliance} ({coverage_percentage:.2f}%)",
-                    'Evidence': [compliance_evidence[c] for c in sorted(compliance_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
 
         if not compliance_summary_df.empty:
             st.write("### 📋 Compliance Extraction Summary by Column")
             st.dataframe(compliance_summary_df)
             with st.expander("📤 Export Compliance Results"):
                 csv = compliance_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="compliance_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="compliance_extraction.csv", mime="text/csv")
         else:
             st.write("No compliance terms were extracted from the data.")
-
-        # Add Business Unit Summary
-        business_unit_summary_data = []
-        for col in df.select_dtypes(include=['object', 'string']).columns:
-            non_null_values = df[col].dropna()
-            sampled_values = non_null_values
-            records_processed = len(sampled_values)
-            
-            results = sampled_values.apply(lambda x: (x, extract_country_region(x)))
-            
-            business_unit_counts = {}
-            business_unit_evidence = {}
-            
-            for val, res in results:
-                for c in res['business_unit']:
-                    business_unit_counts[c] = business_unit_counts.get(c, 0) + 1
-                    if c not in business_unit_evidence:
-                        business_unit_evidence[c] = val
-
-            if business_unit_counts:
-                records_with_business_unit = sum(1 for _, res in results if res['business_unit'])
-                coverage_percentage = (records_with_business_unit / total_records) * 100
-
-                business_unit_summary_data.append({
-                    'Field': col,
-                    'Business Units Found': ', '.join(sorted(business_unit_counts.keys())),
-                    'Coverage': f"{records_with_business_unit} ({coverage_percentage:.2f}%)",
-                    'Evidence': [business_unit_evidence[c] for c in sorted(business_unit_counts.keys())],
-                    'Records Processed': records_processed
-                })
-
-        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
 
         if not business_unit_summary_df.empty:
             st.write("### 🏢 Business Unit Extraction Summary by Column")
             st.dataframe(business_unit_summary_df)
             with st.expander("📤 Export Business Unit Results"):
                 csv = business_unit_summary_df.to_csv(index=False).encode()
-                st.download_button(
-                    "📄 Download as CSV",
-                    data=csv,
-                    file_name="business_unit_extraction.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📄 Download as CSV", data=csv, file_name="business_unit_extraction.csv", mime="text/csv")
         else:
             st.write("No business units were extracted from the data.")
 
-    # --- Custom Extraction Summary (Structured like Country/Region) ---
+    # --- Custom Extraction Summary ---
     if "custom_categories" in st.session_state and df is not None:
         st.markdown("## 🧠 Custom Extraction Insights")
         
-        # Add debug information about current custom categories
         with st.expander("🔧 Debug: Current Custom Categories"):
             st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
             for cat, meta in st.session_state.custom_categories.items():
@@ -1123,47 +1197,48 @@ if df is not None:
 
         for category_name, meta in st.session_state.custom_categories.items():
             automaton = meta["automaton"]
-            summary_data = []
+            
+            # Create progress bar for custom extraction
+            custom_progress = st.progress(0)
+            custom_status = st.empty()
 
             st.subheader(f"🔍 Extraction Summary for `{category_name}`")
 
-            for col in df.select_dtypes(include=["object", "string"]).columns:
-                non_null_values = df[col].dropna()
-                sampled_values = non_null_values
-                records_processed = len(sampled_values)
+            # Process custom extractions in parallel
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                custom_futures = {
+                    executor.submit(
+                        process_custom_extraction_parallel,
+                        df[col].dropna(),
+                        col,
+                        total_records,
+                        category_name,
+                        automaton
+                    ): col 
+                    for col in df.select_dtypes(include=["object", "string"]).columns
+                }
+                
+                all_custom_data = []
+                total_columns = len(df.select_dtypes(include=["object", "string"]).columns)
+                completed = 0
+                
+                for future in as_completed(custom_futures):
+                    col = custom_futures[future]
+                    completed += 1
+                    custom_progress.progress(completed / total_columns)
+                    custom_status.text(f"Processing {category_name} extraction for column {completed}/{total_columns}: {col}")
+                    
+                    try:
+                        custom_data = future.result()
+                        all_custom_data.extend(custom_data)
+                    except Exception as e:
+                        st.error(f"Error processing custom extraction for column {col}: {str(e)}")
 
-                # Update the extraction logic to use is_valid_match
-                results = []
-                for val in sampled_values:
-                    val_lower = str(val).lower()
-                    matches = set()
-                    for _, (_, match) in automaton.iter(val_lower):
-                        if is_valid_match(match.lower(), val_lower):
-                            matches.add(match)
-                    results.append((val, list(matches)))
+            # Clear progress indicators
+            custom_progress.empty()
+            custom_status.empty()
 
-                match_counts = {}
-                match_evidence = {}
-
-                for val, matches in results:
-                    for m in matches:
-                        match_counts[m] = match_counts.get(m, 0) + 1
-                        if m not in match_evidence:
-                            match_evidence[m] = val
-
-                if match_counts:
-                    total_mentions = sum(match_counts.values())
-                    coverage_percentage = (total_mentions / total_records) * 100
-
-                    summary_data.append({
-                        "Field": col,
-                        f"{category_name}s Found": ', '.join(sorted(match_counts.keys())),
-                        "Coverage": f"{total_mentions} ({coverage_percentage:.2f}%)",
-                        "Evidence": [match_evidence[m] for m in sorted(match_counts.keys())],
-                        "Records Processed": records_processed
-                    })
-
-            summary_df = pd.DataFrame(summary_data)
+            summary_df = pd.DataFrame(all_custom_data)
 
             if not summary_df.empty:
                 st.markdown(f"### Summary Table for `{category_name}`")
