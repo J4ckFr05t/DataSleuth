@@ -7,3 +7,4 @@ matplotlib>=3.5.0
 openpyxl
 lxml>=4.9.0
 xmltodict>=0.13.0
+plotly
