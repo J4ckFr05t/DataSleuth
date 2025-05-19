@@ -408,29 +408,37 @@ st.title("📊 DataSleuth - Smart EDA Viewer")
 st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
-    session_data = pickle.load(uploaded_session)
-    df = session_data["dataframe"]
-    primary_keys = session_data["primary_keys"]
-    countries_input = session_data["countries_input"]
-    regions_input = session_data["regions_input"]
+    # Check if we've already loaded this session
+    if 'session_loaded' not in st.session_state:
+        session_data = pickle.load(uploaded_session)
+        df = session_data["dataframe"]
+        primary_keys = session_data["primary_keys"]
+        countries_input = session_data["countries_input"]
+        regions_input = session_data["regions_input"]
 
-    # Initialize custom categories in session state if not exists
-    if "custom_categories" not in st.session_state:
-        st.session_state.custom_categories = {}
+        # Store the dataframe in session state
+        st.session_state.df = df
+        st.session_state.file_name = "loaded_session.pkl"  # Set a default name for loaded sessions
+        st.session_state.session_loaded = True  # Mark session as loaded
 
-    # Restore custom categories if present in session data
-    if "custom_categories" in session_data:
-        for cat, keywords in session_data["custom_categories"].items():
-            # Only add if category doesn't exist or if it's different
-            if cat not in st.session_state.custom_categories or st.session_state.custom_categories[cat]["keywords"] != keywords:
-                automaton = build_automaton(keywords)
-                st.session_state.custom_categories[cat] = {
-                    "keywords": keywords,
-                    "automaton": automaton
-                }
-                st.success(f"✅ Restored custom category: {cat}")
+        # Initialize custom categories in session state if not exists
+        if "custom_categories" not in st.session_state:
+            st.session_state.custom_categories = {}
 
-    st.success("✅ Session loaded successfully! Continue exploring below.")
+        # Restore custom categories if present in session data
+        if "custom_categories" in session_data:
+            for cat, keywords in session_data["custom_categories"].items():
+                # Only add if category doesn't exist or if it's different
+                if cat not in st.session_state.custom_categories or st.session_state.custom_categories[cat]["keywords"] != keywords:
+                    automaton = build_automaton(keywords)
+                    st.session_state.custom_categories[cat] = {
+                        "keywords": keywords,
+                        "automaton": automaton
+                    }
+                    st.success(f"✅ Restored custom category: {cat}")
+
+        st.success("✅ Session loaded successfully! Continue exploring below.")
+        st.rerun()  # Force a rerun to trigger analytics
 
 # --- Dynamic Table of Contents ---
 toc = """
