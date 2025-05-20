@@ -601,6 +601,36 @@ if uploaded_file is not None:
     st.session_state.uploaded_file = uploaded_file
     st.session_state.file_name = uploaded_file.name
 
+# Add download session button right after file upload
+if 'df' in st.session_state and st.session_state.df is not None:
+    session_data = {
+        "dataframe": st.session_state.df,
+        "primary_keys": primary_keys if 'primary_keys' in locals() else None,
+        "countries_input": st.session_state.get('countries_input', ""),
+        "regions_input": st.session_state.get('regions_input', ""),
+        "compliance_input": st.session_state.get('compliance_input', ""),
+        "business_unit_input": st.session_state.get('business_unit_input', ""),
+        "custom_categories": {
+            cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
+        }
+    }
+
+    # Build filename: <original_filename>_<timestamp>.pkl
+    original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_filename = f"{original_filename}_{timestamp}.pkl"
+
+    # Convert session data to bytes
+    session_bytes = pickle.dumps(session_data)
+    
+    # Create download button
+    st.download_button(
+        label="💾 Download Session",
+        data=session_bytes,
+        file_name=full_filename,
+        mime="application/octet-stream"
+    )
+
 # Check if we have a stored file in session state
 if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not None:
     uploaded_file = st.session_state.uploaded_file
@@ -1308,36 +1338,3 @@ if df is not None:
                 st.dataframe(summary_df)
             else:
                 st.info(f"No `{category_name}` matches found.")
-
-
-if st.button("💾 Save Session"):
-    if 'df' in locals() and df is not None:
-        session_data = {
-            "dataframe": df,
-            "primary_keys": primary_keys if 'primary_keys' in locals() else None,
-            "countries_input": st.session_state.get('countries_input', ""),
-            "regions_input": st.session_state.get('regions_input', ""),
-            "compliance_input": st.session_state.get('compliance_input', ""),
-            "business_unit_input": st.session_state.get('business_unit_input', ""),
-            "custom_categories": {
-                cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
-            }
-        }
-
-        # Prepare save directory
-        save_dir = "EDA_Reports"
-        os.makedirs(save_dir, exist_ok=True)
-
-        # Build filename: <original_filename>_<timestamp>.pkl
-        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_filename = f"{original_filename}_{timestamp}.pkl"
-        save_path = os.path.join(save_dir, full_filename)
-
-        # Save to file
-        with open(save_path, "wb") as f:
-            pickle.dump(session_data, f)
-
-        st.success(f"✅ Session saved to `{save_path}`")
-    else:
-        st.warning("⚠️ No dataframe available to save.")
