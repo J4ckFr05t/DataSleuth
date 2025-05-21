@@ -452,7 +452,7 @@ toc = """
 
 # Only add Country/Region Extraction Insights to TOC if sidebar is visible
 if st.session_state.get('sidebar_visible', True):
-    toc += "\n- [Country/Region Extraction Insights](#country-region-extraction-insights)"
+    toc += "\n- [Country/Region/Compliance/Business Unit Extraction Insights](#country-region-compliance-business-unit-extraction-insights)"
 
 # Append custom categories to the TOC if present
 if "custom_categories" in st.session_state and st.session_state.custom_categories:
@@ -812,7 +812,6 @@ if df is not None:
         df = st.session_state.filtered_data
 
     st.markdown("## Field-wise Summary")
-    st.subheader("🧾 Field-wise Summary")
     summaries = []
     for col in df.columns:
         dtype = simplify_dtype(df[col].dtype)
@@ -835,7 +834,6 @@ if df is not None:
         st.download_button("📄 Download as Confluence-compatible HTML", data=html, file_name="eda_summary.html", mime="text/html")
 
     st.markdown("## Primary Key Identification")
-    st.subheader("🗝️ Primary Key Identification")
 
     # Step 1: Auto-detect single-column primary keys
     auto_keys = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
@@ -887,7 +885,6 @@ if df is not None:
 
 
     st.markdown("## Per Field Insights")
-    st.subheader("📌 Per Field Insights")
     
     # Get the number of CPU cores available
     num_cores = multiprocessing.cpu_count()
@@ -1071,7 +1068,6 @@ if df is not None:
     status_text.empty()
 
     st.markdown("## Pattern Detection")
-    st.subheader("🔍 Pattern Detection")
     st.markdown("""
     Each value is scanned for **known formats** like:
     - **Internal IP**: Private IP addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, etc.)
@@ -1145,8 +1141,7 @@ if df is not None:
             st.info("No patterns to export.")
 
     if sidebar_visible:
-        st.markdown("## Country/Region Extraction Insights")
-        st.subheader("🌍 Country/Region Extraction Insights")
+        st.markdown("## Country/Region/Compliance/Business Unit Extraction Insights")
 
         # Create progress bar for extractions
         extraction_progress = st.progress(0)
@@ -1249,7 +1244,6 @@ if df is not None:
     if "custom_categories" in st.session_state and st.session_state.custom_categories and len(st.session_state.custom_categories) > 0:
         st.markdown('<div id="custom-extraction-insights"></div>', unsafe_allow_html=True)
         st.markdown("## Custom Extraction Insights")
-        st.subheader("🧠 Custom Extraction Insights")
         
         with st.expander("🔧 Debug: Current Custom Categories"):
             st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
