@@ -472,9 +472,7 @@ if 'business_unit_input' not in st.session_state:
 
 # Country/Region/Compliance/Business Unit Configs Section
 st.sidebar.markdown("### 🌍 Extraction Configs")
-if 'sidebar_visible' not in st.session_state:
-    st.session_state.sidebar_visible = True
-sidebar_visible = st.sidebar.checkbox("Show/Hide Extraction Configs", value=st.session_state.sidebar_visible, key='sidebar_visible')
+sidebar_visible = st.sidebar.checkbox("Show/Hide Extraction Configs", value=True, key='sidebar_visible')
 
 if sidebar_visible:
     countries_input = st.sidebar.text_area(
@@ -1146,7 +1144,7 @@ if df is not None:
         else:
             st.info("No patterns to export.")
 
-    if sidebar_visible:
+    if st.session_state.sidebar_visible:
         st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
 
