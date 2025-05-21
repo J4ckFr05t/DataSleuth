@@ -31,7 +31,8 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 
 ## 🛠️ Local Installation
 
-
+- Windows: Double click run_app.sh
+- Linux/MacOS: chmod +x run_app.sh; ./run_app.sh
 
 ---
 
