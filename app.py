@@ -1144,7 +1144,7 @@ if df is not None:
         else:
             st.info("No patterns to export.")
 
-    if st.session_state.sidebar_visible:
+    if sidebar_visible:
         st.markdown("## Country/Region Extraction Insights")
         st.subheader("🌍 Country/Region Extraction Insights")
 
@@ -1247,7 +1247,9 @@ if df is not None:
 
     # --- Custom Extraction Summary ---
     if "custom_categories" in st.session_state and st.session_state.custom_categories and len(st.session_state.custom_categories) > 0:
-        st.markdown("## 🧠 Custom Extraction Insights")
+        st.markdown('<div id="custom-extraction-insights"></div>', unsafe_allow_html=True)
+        st.markdown("## Custom Extraction Insights")
+        st.subheader("🧠 Custom Extraction Insights")
         
         with st.expander("🔧 Debug: Current Custom Categories"):
             st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
