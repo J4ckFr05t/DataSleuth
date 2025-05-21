@@ -443,6 +443,7 @@ if uploaded_session:
 # --- Dynamic Table of Contents ---
 toc = """
 # Table of Contents
+- [Load Previous Session](#load-previous-session)
 - [Upload New File](#upload-new-file)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
