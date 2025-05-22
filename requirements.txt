@@ -7,4 +7,9 @@ matplotlib>=3.5.0
 openpyxl
 lxml>=4.9.0
 xmltodict>=0.13.0
-plotly
+plotly>=5.13.0
+pyhive>=0.7.0
+thrift>=0.16.0
+pure-sasl
+thrift-sasl>=0.4.3
+tqdm>=4.64.0

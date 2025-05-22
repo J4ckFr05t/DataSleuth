@@ -20,6 +20,10 @@ import numpy as np
 from column_processor import process_single_column
 import plotly.express as px
 import plotly.graph_objects as go
+import json
+from pyhive import hive  # Add this import for Spark Thrift Server connection
+import time  # Add time module for tracking analysis duration
+from tqdm import tqdm
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -386,6 +390,62 @@ def render_donut_chart(df, x_col, y_col, title, color_scheme='blues'):
     
     return fig
 
+# Function to save connection details
+def save_connection_details(connection_name, details):
+    """Save database connection details to a JSON file"""
+    try:
+        # Create connections directory if it doesn't exist
+        os.makedirs('connections', exist_ok=True)
+        
+        # Load existing connections
+        connections = {}
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                connections = json.load(f)
+        
+        # Add new connection
+        connections[connection_name] = details
+        
+        # Save updated connections
+        with open('connections/db_connections.json', 'w') as f:
+            json.dump(connections, f, indent=4)
+            
+        return True
+    except Exception as e:
+        st.error(f"Error saving connection details: {str(e)}")
+        return False
+
+# Function to load connection details
+def load_connection_details():
+    """Load saved database connection details from JSON file"""
+    try:
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        st.error(f"Error loading connection details: {str(e)}")
+        return {}
+
+# Function to delete connection details
+def delete_connection_details(connection_name):
+    """Delete a saved database connection"""
+    try:
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                connections = json.load(f)
+            
+            if connection_name in connections:
+                del connections[connection_name]
+                
+                with open('connections/db_connections.json', 'w') as f:
+                    json.dump(connections, f, indent=4)
+                return True
+        return False
+    except Exception as e:
+        st.error(f"Error deleting connection details: {str(e)}")
+        return False
+
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
 # Dark mode style
@@ -402,6 +462,10 @@ body {
 </style>
 """
 st.markdown(dark_style, unsafe_allow_html=True)
+
+# Add analysis time tracking
+if 'analysis_start_time' not in st.session_state:
+    st.session_state.analysis_start_time = time.time()
 
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
@@ -440,10 +504,140 @@ if uploaded_session:
         st.success("✅ Session loaded successfully! Continue exploring below.")
         st.rerun()  # Force a rerun to trigger analytics
 
+# Add Database Loading Section
+st.markdown("## Load from Database")
+with st.expander("📊 Database Connection Options", expanded=False):
+    db_type = st.selectbox(
+        "Select Database Type",
+        ["Spark Thrift Server"],
+        key="db_type"
+    )
+
+    if db_type == "Spark Thrift Server":
+        st.markdown("### Spark Thrift Server Connection")
+        
+        # Load saved connections
+        saved_connections = load_connection_details()
+        
+        # Connection management section
+        st.markdown("#### 🔧 Connection Management")
+        
+        # Show saved connections
+        if saved_connections:
+            st.markdown("##### Saved Connections")
+            for conn_name in saved_connections:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(conn_name)
+                with col2:
+                    if st.button("Delete", key=f"del_{conn_name}"):
+                        if delete_connection_details(conn_name):
+                            st.success(f"Deleted connection: {conn_name}")
+                            st.rerun()
+        
+        # Add new connection form
+        st.markdown("##### Save New Connection")
+        with st.form(key="save_connection_form"):
+            new_conn_name = st.text_input("Connection Name")
+            new_host = st.text_input("Host")
+            new_port = st.number_input("Port", value=10000, min_value=1, max_value=65535)
+            new_use_auth = st.checkbox("Use Authentication")
+            
+            # Create columns for username/password to keep them side by side
+            auth_col1, auth_col2 = st.columns(2)
+            with auth_col1:
+                new_username = st.text_input("Username", value="", key="new_username")
+            with auth_col2:
+                new_password = st.text_input("Password", type="password", value="", key="new_password")
+            
+            if st.form_submit_button("Save Connection"):
+                if new_conn_name and new_host and new_port:
+                    details = {
+                        "host": new_host,
+                        "port": new_port,
+                        "use_auth": new_use_auth,
+                        "username": new_username if new_use_auth else "",
+                        "password": new_password if new_use_auth else ""
+                    }
+                    if save_connection_details(new_conn_name, details):
+                        st.success(f"Saved connection: {new_conn_name}")
+                        st.rerun()
+                else:
+                    st.error("Please fill in all required fields")
+        
+        st.markdown("---")
+        
+        # Connection selection and query form
+        if saved_connections:
+            selected_conn = st.selectbox(
+                "Select Connection",
+                options=list(saved_connections.keys())
+            )
+            
+            # Use saved connection details
+            conn_details = saved_connections[selected_conn]
+            
+            # Show connection details
+            st.info(f"Using connection: {selected_conn}")
+            
+            st.markdown(f"""
+            - Host: {conn_details['host']}
+            - Port: {conn_details['port']}
+            - Authentication: {'Enabled' if conn_details['use_auth'] else 'Disabled'}
+            """)
+            
+            # Query form
+            with st.form(key="saved_connection_form"):
+                query = st.text_area("SQL Query", value="SELECT * FROM default.employee_table", 
+                                   help="Enter your query in format: SELECT * FROM database.table")
+                
+                if st.form_submit_button("Connect and Load Data"):
+                    try:
+                        # Import required packages
+                        import pandas as pd
+                        
+                        # Create connection with or without authentication
+                        conn_params = {
+                            'host': conn_details['host'],
+                            'port': conn_details['port']
+                        }
+                        
+                        if conn_details['use_auth']:
+                            conn_params.update({
+                                'username': conn_details['username'],
+                                'password': conn_details['password'],
+                                'auth': 'LDAP'
+                            })
+                        else:
+                            conn_params['auth'] = 'NONE'
+                        
+                        # Show loading message
+                        loading_msg = st.info("Loading data from database... This may take a few moments.")
+                        
+                        # Single database call to fetch all data
+                        with hive.Connection(**conn_params) as conn:
+                            df = pd.read_sql(query, conn)
+                        
+                        # Clear loading message
+                        loading_msg.empty()
+                        
+                        # Store the dataframe in session state
+                        st.session_state.df = df
+                        st.session_state.file_name = "spark_query_result.csv"
+                        
+                        st.success(f"✅ Successfully loaded {df.shape[0]:,} records with {df.shape[1]} fields from Spark Thrift Server.")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error connecting to Spark Thrift Server: {str(e)}")
+        else:
+            st.warning("⚠️ No saved connections found. Please save a connection first.")
+
 # --- Dynamic Table of Contents ---
 toc = """
 # Table of Contents
 - [Load Previous Session](#load-previous-session)
+- [Load from Database](#load-from-database)
 - [Upload New File](#upload-new-file)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
@@ -1336,3 +1530,14 @@ if st.button("💾 Save Session"):
         st.success(f"✅ Session saved to `{save_path}`")
     else:
         st.warning("⚠️ No dataframe available to save.")
+
+# Display total analysis time at the end
+if 'analysis_start_time' in st.session_state:
+    total_time = time.time() - st.session_state.analysis_start_time
+    minutes = int(total_time // 60)
+    seconds = total_time % 60
+    if minutes > 0:
+        time_str = f"{minutes} minutes and {seconds:.2f} seconds"
+    else:
+        time_str = f"{seconds:.2f} seconds"
+    st.success(f"⏱️ Total Analysis Time: {time_str}")
