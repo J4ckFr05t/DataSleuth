@@ -22,6 +22,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 from pyhive import hive  # Add this import for Spark Thrift Server connection
+import time  # Add time module for tracking analysis duration
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -461,6 +462,10 @@ body {
 """
 st.markdown(dark_style, unsafe_allow_html=True)
 
+# Add analysis time tracking
+if 'analysis_start_time' not in st.session_state:
+    st.session_state.analysis_start_time = time.time()
+
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
 st.markdown("## Load Previous Session")
@@ -592,7 +597,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
             
             # Query form
             with st.form(key="saved_connection_form"):
-                query = st.text_area("SQL Query", value="SELECT * FROM table LIMIT 1000")
+                query = st.text_area("SQL Query", value="SELECT * FROM employee_table")
                 
                 if st.form_submit_button("Connect and Load Data"):
                     try:
@@ -1532,3 +1537,14 @@ if st.button("💾 Save Session"):
         st.success(f"✅ Session saved to `{save_path}`")
     else:
         st.warning("⚠️ No dataframe available to save.")
+
+# Display total analysis time at the end
+if 'analysis_start_time' in st.session_state:
+    total_time = time.time() - st.session_state.analysis_start_time
+    minutes = int(total_time // 60)
+    seconds = total_time % 60
+    if minutes > 0:
+        time_str = f"{minutes} minutes and {seconds:.2f} seconds"
+    else:
+        time_str = f"{seconds:.2f} seconds"
+    st.success(f"⏱️ Total Analysis Time: {time_str}")
