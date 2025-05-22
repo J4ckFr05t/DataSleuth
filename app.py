@@ -555,7 +555,6 @@ with st.expander("📊 Database Connection Options", expanded=False):
                     details = {
                         "host": new_host,
                         "port": new_port,
-                        "database": "default",  # Always set default database initially
                         "use_auth": new_use_auth,
                         "username": new_username if new_use_auth else "",
                         "password": new_password if new_use_auth else ""
@@ -581,24 +580,16 @@ with st.expander("📊 Database Connection Options", expanded=False):
             # Show connection details
             st.info(f"Using connection: {selected_conn}")
             
-            # Database input
-            st.markdown("##### Database Selection")
-            selected_database = st.text_input(
-                "Enter Database Name",
-                value=conn_details['database'],
-                help="Enter the name of the database you want to connect to"
-            )
-            
             st.markdown(f"""
             - Host: {conn_details['host']}
             - Port: {conn_details['port']}
-            - Database: {selected_database}
             - Authentication: {'Enabled' if conn_details['use_auth'] else 'Disabled'}
             """)
             
             # Query form
             with st.form(key="saved_connection_form"):
-                query = st.text_area("SQL Query", value="SELECT * FROM employee_table")
+                query = st.text_area("SQL Query", value="SELECT * FROM default.employee_table", 
+                                   help="Enter your query in format: SELECT * FROM database.table")
                 
                 if st.form_submit_button("Connect and Load Data"):
                     try:
@@ -608,8 +599,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
                         # Create connection with or without authentication
                         conn_params = {
                             'host': conn_details['host'],
-                            'port': conn_details['port'],
-                            'database': selected_database
+                            'port': conn_details['port']
                         }
                         
                         if conn_details['use_auth']:
