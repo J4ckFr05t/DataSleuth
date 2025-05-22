@@ -1,0 +1,10 @@
+{
+    "Test": {
+        "host": "localhost",
+        "port": 10000,
+        "database": "default",
+        "use_auth": false,
+        "username": "",
+        "password": ""
+    }
+}

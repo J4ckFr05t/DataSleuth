@@ -20,6 +20,8 @@ import numpy as np
 from column_processor import process_single_column
 import plotly.express as px
 import plotly.graph_objects as go
+import json
+from pyhive import hive  # Add this import for Spark Thrift Server connection
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -386,6 +388,62 @@ def render_donut_chart(df, x_col, y_col, title, color_scheme='blues'):
     
     return fig
 
+# Function to save connection details
+def save_connection_details(connection_name, details):
+    """Save database connection details to a JSON file"""
+    try:
+        # Create connections directory if it doesn't exist
+        os.makedirs('connections', exist_ok=True)
+        
+        # Load existing connections
+        connections = {}
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                connections = json.load(f)
+        
+        # Add new connection
+        connections[connection_name] = details
+        
+        # Save updated connections
+        with open('connections/db_connections.json', 'w') as f:
+            json.dump(connections, f, indent=4)
+            
+        return True
+    except Exception as e:
+        st.error(f"Error saving connection details: {str(e)}")
+        return False
+
+# Function to load connection details
+def load_connection_details():
+    """Load saved database connection details from JSON file"""
+    try:
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        st.error(f"Error loading connection details: {str(e)}")
+        return {}
+
+# Function to delete connection details
+def delete_connection_details(connection_name):
+    """Delete a saved database connection"""
+    try:
+        if os.path.exists('connections/db_connections.json'):
+            with open('connections/db_connections.json', 'r') as f:
+                connections = json.load(f)
+            
+            if connection_name in connections:
+                del connections[connection_name]
+                
+                with open('connections/db_connections.json', 'w') as f:
+                    json.dump(connections, f, indent=4)
+                return True
+        return False
+    except Exception as e:
+        st.error(f"Error deleting connection details: {str(e)}")
+        return False
+
 st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
 
 # Dark mode style
@@ -452,66 +510,130 @@ with st.expander("📊 Database Connection Options", expanded=False):
     if db_type == "Spark Thrift Server":
         st.markdown("### Spark Thrift Server Connection")
         
-        # Authentication section outside form
-        st.markdown("#### Authentication (Optional)")
-        use_auth = st.checkbox("Use Authentication", value=False)
+        # Load saved connections
+        saved_connections = load_connection_details()
         
-        if use_auth:
-            username = st.text_input("Username", value="")
-            password = st.text_input("Password", type="password", value="")
-        else:
-            username = ""
-            password = ""
+        # Connection management section
+        st.markdown("#### 🔧 Connection Management")
         
-        # Connection form
-        with st.form(key="spark_connection_form"):
-            host = st.text_input("Host", value="localhost")
-            port = st.number_input("Port", value=10000, min_value=1, max_value=65535)
-            database = st.text_input("Database", value="default")
-            query = st.text_area("SQL Query", value="SELECT * FROM table LIMIT 1000")
+        # Show saved connections
+        if saved_connections:
+            st.markdown("##### Saved Connections")
+            for conn_name in saved_connections:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(conn_name)
+                with col2:
+                    if st.button("Delete", key=f"del_{conn_name}"):
+                        if delete_connection_details(conn_name):
+                            st.success(f"Deleted connection: {conn_name}")
+                            st.rerun()
+        
+        # Add new connection form
+        st.markdown("##### Save New Connection")
+        with st.form(key="save_connection_form"):
+            new_conn_name = st.text_input("Connection Name")
+            new_host = st.text_input("Host")
+            new_port = st.number_input("Port", value=10000, min_value=1, max_value=65535)
+            new_use_auth = st.checkbox("Use Authentication")
             
-            submitted = st.form_submit_button("Connect and Load Data")
+            # Create columns for username/password to keep them side by side
+            auth_col1, auth_col2 = st.columns(2)
+            with auth_col1:
+                new_username = st.text_input("Username", value="", key="new_username")
+            with auth_col2:
+                new_password = st.text_input("Password", type="password", value="", key="new_password")
             
-            if submitted:
-                try:
-                    # Import required packages
-                    import pyhive
-                    from pyhive import hive
-                    import pandas as pd
-                    
-                    # Create connection with or without authentication
-                    conn_params = {
-                        'host': host,
-                        'port': port,
-                        'database': database
+            if st.form_submit_button("Save Connection"):
+                if new_conn_name and new_host and new_port:
+                    details = {
+                        "host": new_host,
+                        "port": new_port,
+                        "database": "default",  # Always set default database initially
+                        "use_auth": new_use_auth,
+                        "username": new_username if new_use_auth else "",
+                        "password": new_password if new_use_auth else ""
                     }
-                    
-                    if use_auth and username and password:
-                        conn_params.update({
-                            'username': username,
-                            'password': password,
-                            'auth': 'LDAP'  # Use LDAP authentication when credentials are provided
-                        })
-                    else:
-                        conn_params['auth'] = 'NONE'  # No authentication if not using auth
-                    
-                    conn = hive.Connection(**conn_params)
-                    
-                    # Execute query and load into pandas DataFrame
-                    df = pd.read_sql(query, conn)
-                    
-                    # Close connection
-                    conn.close()
-                    
-                    # Store the dataframe in session state
-                    st.session_state.df = df
-                    st.session_state.file_name = "spark_query_result.csv"  # Set a default name for database results
-                    
-                    st.success(f"✅ Successfully loaded {df.shape[0]} records with {df.shape[1]} fields from Spark Thrift Server.")
-                    st.rerun()  # Force a rerun to trigger analytics
-                    
-                except Exception as e:
-                    st.error(f"❌ Error connecting to Spark Thrift Server: {str(e)}")
+                    if save_connection_details(new_conn_name, details):
+                        st.success(f"Saved connection: {new_conn_name}")
+                        st.rerun()
+                else:
+                    st.error("Please fill in all required fields")
+        
+        st.markdown("---")
+        
+        # Connection selection and query form
+        if saved_connections:
+            selected_conn = st.selectbox(
+                "Select Connection",
+                options=list(saved_connections.keys())
+            )
+            
+            # Use saved connection details
+            conn_details = saved_connections[selected_conn]
+            
+            # Show connection details
+            st.info(f"Using connection: {selected_conn}")
+            
+            # Database input
+            st.markdown("##### Database Selection")
+            selected_database = st.text_input(
+                "Enter Database Name",
+                value=conn_details['database'],
+                help="Enter the name of the database you want to connect to"
+            )
+            
+            st.markdown(f"""
+            - Host: {conn_details['host']}
+            - Port: {conn_details['port']}
+            - Database: {selected_database}
+            - Authentication: {'Enabled' if conn_details['use_auth'] else 'Disabled'}
+            """)
+            
+            # Query form
+            with st.form(key="saved_connection_form"):
+                query = st.text_area("SQL Query", value="SELECT * FROM table LIMIT 1000")
+                
+                if st.form_submit_button("Connect and Load Data"):
+                    try:
+                        # Import required packages
+                        import pandas as pd
+                        
+                        # Create connection with or without authentication
+                        conn_params = {
+                            'host': conn_details['host'],
+                            'port': conn_details['port'],
+                            'database': selected_database
+                        }
+                        
+                        if conn_details['use_auth']:
+                            conn_params.update({
+                                'username': conn_details['username'],
+                                'password': conn_details['password'],
+                                'auth': 'LDAP'
+                            })
+                        else:
+                            conn_params['auth'] = 'NONE'
+                        
+                        conn = hive.Connection(**conn_params)
+                        
+                        # Execute query and load into pandas DataFrame
+                        df = pd.read_sql(query, conn)
+                        
+                        # Close connection
+                        conn.close()
+                        
+                        # Store the dataframe in session state
+                        st.session_state.df = df
+                        st.session_state.file_name = "spark_query_result.csv"
+                        
+                        st.success(f"✅ Successfully loaded {df.shape[0]} records with {df.shape[1]} fields from Spark Thrift Server.")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error connecting to Spark Thrift Server: {str(e)}")
+        else:
+            st.warning("⚠️ No saved connections found. Please save a connection first.")
 
 # --- Dynamic Table of Contents ---
 toc = """
