@@ -440,6 +440,79 @@ if uploaded_session:
         st.success("✅ Session loaded successfully! Continue exploring below.")
         st.rerun()  # Force a rerun to trigger analytics
 
+# Add Database Loading Section
+st.markdown("## Load from Database")
+with st.expander("📊 Database Connection Options", expanded=False):
+    db_type = st.selectbox(
+        "Select Database Type",
+        ["Spark Thrift Server"],
+        key="db_type"
+    )
+
+    if db_type == "Spark Thrift Server":
+        st.markdown("### Spark Thrift Server Connection")
+        
+        # Authentication section outside form
+        st.markdown("#### Authentication (Optional)")
+        use_auth = st.checkbox("Use Authentication", value=False)
+        
+        if use_auth:
+            username = st.text_input("Username", value="")
+            password = st.text_input("Password", type="password", value="")
+        else:
+            username = ""
+            password = ""
+        
+        # Connection form
+        with st.form(key="spark_connection_form"):
+            host = st.text_input("Host", value="localhost")
+            port = st.number_input("Port", value=10000, min_value=1, max_value=65535)
+            database = st.text_input("Database", value="default")
+            query = st.text_area("SQL Query", value="SELECT * FROM table LIMIT 1000")
+            
+            submitted = st.form_submit_button("Connect and Load Data")
+            
+            if submitted:
+                try:
+                    # Import required packages
+                    import pyhive
+                    from pyhive import hive
+                    import pandas as pd
+                    
+                    # Create connection with or without authentication
+                    conn_params = {
+                        'host': host,
+                        'port': port,
+                        'database': database
+                    }
+                    
+                    if use_auth and username and password:
+                        conn_params.update({
+                            'username': username,
+                            'password': password,
+                            'auth': 'LDAP'  # Use LDAP authentication when credentials are provided
+                        })
+                    else:
+                        conn_params['auth'] = 'NONE'  # No authentication if not using auth
+                    
+                    conn = hive.Connection(**conn_params)
+                    
+                    # Execute query and load into pandas DataFrame
+                    df = pd.read_sql(query, conn)
+                    
+                    # Close connection
+                    conn.close()
+                    
+                    # Store the dataframe in session state
+                    st.session_state.df = df
+                    st.session_state.file_name = "spark_query_result.csv"  # Set a default name for database results
+                    
+                    st.success(f"✅ Successfully loaded {df.shape[0]} records with {df.shape[1]} fields from Spark Thrift Server.")
+                    st.rerun()  # Force a rerun to trigger analytics
+                    
+                except Exception as e:
+                    st.error(f"❌ Error connecting to Spark Thrift Server: {str(e)}")
+
 # --- Dynamic Table of Contents ---
 toc = """
 # Table of Contents
