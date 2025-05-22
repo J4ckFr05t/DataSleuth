@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import json
 from pyhive import hive  # Add this import for Spark Thrift Server connection
 import time  # Add time module for tracking analysis duration
+from tqdm import tqdm
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -603,6 +604,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
                     try:
                         # Import required packages
                         import pandas as pd
+                        from tqdm import tqdm
                         
                         # Create connection with or without authentication
                         conn_params = {
@@ -620,19 +622,61 @@ with st.expander("📊 Database Connection Options", expanded=False):
                         else:
                             conn_params['auth'] = 'NONE'
                         
-                        conn = hive.Connection(**conn_params)
+                        # First, get the total count of records
+                        with hive.Connection(**conn_params) as count_conn:
+                            count_query = f"SELECT COUNT(*) as total FROM ({query}) as subquery"
+                            total_records = pd.read_sql(count_query, count_conn).iloc[0]['total']
                         
-                        # Execute query and load into pandas DataFrame
-                        df = pd.read_sql(query, conn)
+                        # Set chunk size based on total records
+                        chunk_size = min(10000, max(1000, total_records // 10))
                         
-                        # Close connection
-                        conn.close()
+                        # Initialize progress bar
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Initialize empty list to store chunks
+                        chunks = []
+                        processed_records = 0
+                        
+                        # Process data in chunks
+                        with hive.Connection(**conn_params) as conn:
+                            # Clean up the query and remove any trailing semicolons
+                            base_query = query.strip().rstrip(';')
+                            
+                            for offset in range(0, total_records, chunk_size):
+                                chunk_query = f"""
+                                SELECT * FROM (
+                                    SELECT *, ROW_NUMBER() OVER (ORDER BY 1) as row_num
+                                    FROM ({base_query}) as base
+                                ) as numbered
+                                WHERE row_num > {offset} AND row_num <= {offset + chunk_size}
+                                """
+                                
+                                # Read chunk
+                                chunk = pd.read_sql(chunk_query, conn)
+                                # Remove the row_num column
+                                if 'row_num' in chunk.columns:
+                                    chunk = chunk.drop('row_num', axis=1)
+                                chunks.append(chunk)
+                                
+                                # Update progress
+                                processed_records += len(chunk)
+                                progress = min(1.0, processed_records / total_records)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Loading data: {processed_records:,}/{total_records:,} records")
+                        
+                        # Combine all chunks
+                        df = pd.concat(chunks, ignore_index=True)
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
                         
                         # Store the dataframe in session state
                         st.session_state.df = df
                         st.session_state.file_name = "spark_query_result.csv"
                         
-                        st.success(f"✅ Successfully loaded {df.shape[0]} records with {df.shape[1]} fields from Spark Thrift Server.")
+                        st.success(f"✅ Successfully loaded {df.shape[0]:,} records with {df.shape[1]} fields from Spark Thrift Server.")
                         st.rerun()
                         
                     except Exception as e:
