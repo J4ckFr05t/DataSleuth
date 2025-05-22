@@ -639,6 +639,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
 toc = """
 # Table of Contents
 - [Load Previous Session](#load-previous-session)
+- [Load from Database](#load-from-database)
 - [Upload New File](#upload-new-file)
 - [Field-wise Summary](#field-wise-summary)
 - [Primary Key Identification](#primary-key-identification)
