@@ -588,7 +588,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
             
             # Query form
             with st.form(key="saved_connection_form"):
-                query = st.text_area("SQL Query", value="SELECT * FROM default.employee_table", 
+                query = st.text_area("SQL Query", value="SELECT * FROM database.table", 
                                    help="Enter your query in format: SELECT * FROM database.table")
                 
                 if st.form_submit_button("Connect and Load Data"):
