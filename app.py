@@ -955,33 +955,39 @@ if df is not None:
             apply_filters = st.form_submit_button("Apply Filters")
         with col2:
             clear_filters = st.form_submit_button("Clear All Filters")
-    
-    # Handle form submission
-    if apply_filters:
-        if filter_selections:
-            filtered_df = df.copy()
-            for field, values in filter_selections.items():
-                try:
-                    non_null_mask = filtered_df[field].notna()
-                    filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
-                    mask = filtered_df[field].isin([str(v) for v in values])
-                    filtered_df = filtered_df[mask]
-                except Exception as e:
-                    st.error(f"Error filtering field {field}: {str(e)}")
-                    continue
-            
-            # Update the filtered data and active filters
-            st.session_state.filtered_data = filtered_df
-            st.session_state.active_filters = filter_selections
-        else:
-            st.session_state.filtered_data = None
+        
+        # Handle form submission inside the form
+        if apply_filters:
+            if filter_selections:
+                filtered_df = df.copy()
+                for field, values in filter_selections.items():
+                    try:
+                        non_null_mask = filtered_df[field].notna()
+                        filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
+                        mask = filtered_df[field].isin([str(v) for v in values])
+                        filtered_df = filtered_df[mask]
+                    except Exception as e:
+                        st.error(f"Error filtering field {field}: {str(e)}")
+                        continue
+                
+                # Update the filtered data and active filters
+                st.session_state.filtered_data = filtered_df
+                st.session_state.active_filters = filter_selections
+                # Reset processed fields to force reprocessing with filtered data
+                st.session_state.processed_fields = {}
+            else:
+                st.session_state.filtered_data = None
+                st.session_state.active_filters = {}
+                # Reset processed fields to force reprocessing with original data
+                st.session_state.processed_fields = {}
+            st.rerun()
+        
+        elif clear_filters:
             st.session_state.active_filters = {}
-        st.rerun()
-    
-    elif clear_filters:
-        st.session_state.active_filters = {}
-        st.session_state.filtered_data = None
-        st.rerun()
+            st.session_state.filtered_data = None
+            # Reset processed fields to force reprocessing with original data
+            st.session_state.processed_fields = {}
+            st.rerun()
     
     # Show active filters if any
     if st.session_state.active_filters:
@@ -1078,7 +1084,6 @@ if df is not None:
     else:
         st.info(f"🔢 Total Records: **{total_records}**  🔑 Primary key not selected.")
 
-
     st.markdown("## Per Field Insights")
     
     # Get the number of CPU cores available
@@ -1086,36 +1091,62 @@ if df is not None:
     # Use 75% of available cores to avoid overwhelming the system
     num_workers = max(1, int(num_cores * 0.75))
     
-    # Create a progress bar
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # Initialize session state for batch processing if not exists
+    if 'processed_fields' not in st.session_state:
+        st.session_state.processed_fields = {}
+    if 'batch_size' not in st.session_state:
+        st.session_state.batch_size = 5
+    if 'current_batch' not in st.session_state:
+        st.session_state.current_batch = 0
     
-    # Process columns in parallel
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        # Create a partial function with the common arguments
-        process_func = partial(process_single_column, 
-                             total_records=len(df),
-                             primary_keys=primary_keys if 'primary_keys' in locals() else None,
-                             original_df=df)  # Pass the original DataFrame
-        
-        # Submit all columns for processing
-        future_to_col = {
-            executor.submit(process_func, df[col], col): col 
-            for col in df.columns
-        }
-        
-        # Process results as they complete
-        total_columns = len(df.columns)
-        completed = 0
-        
-        for future in as_completed(future_to_col):
-            col = future_to_col[future]
-            completed += 1
-            progress_bar.progress(completed / total_columns)
-            status_text.text(f"Processing column {completed}/{total_columns}: {col}")
+    # Get all fields
+    all_fields = list(df.columns)
+    total_fields = len(all_fields)
+    
+    # Process all fields in parallel first
+    if not st.session_state.processed_fields:
+        st.info("Processing all fields... This may take a moment.")
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Create a partial function with the common arguments
+            process_func = partial(process_single_column, 
+                                 total_records=len(df),
+                                 primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                 original_df=df)
             
-            try:
-                insights = future.result()
+            # Submit all fields for processing
+            future_to_col = {
+                executor.submit(process_func, df[col], col): col 
+                for col in all_fields
+            }
+            
+            # Process results as they complete
+            for future in as_completed(future_to_col):
+                col = future_to_col[future]
+                try:
+                    insights = future.result()
+                    st.session_state.processed_fields[col] = insights
+                except Exception as e:
+                    st.error(f"Error processing column {col}: {str(e)}")
+    
+    # Calculate start and end indices for current batch
+    start_idx = st.session_state.current_batch * st.session_state.batch_size
+    end_idx = min(start_idx + st.session_state.batch_size, total_fields)
+    
+    # Display current batch
+    if start_idx < total_fields:
+        current_batch = all_fields[start_idx:end_idx]
+        
+        # Create a progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Display insights for current batch
+        for i, col in enumerate(current_batch):
+            progress_bar.progress((i + 1) / len(current_batch))
+            status_text.text(f"Displaying column {i + 1}/{len(current_batch)}: {col}")
+            
+            if col in st.session_state.processed_fields:
+                insights = st.session_state.processed_fields[col]
                 
                 # Display the insights for this column
                 st.markdown(f"### 🧬 {insights['column_name']}")
@@ -1189,16 +1220,32 @@ if df is not None:
                     chart_df = pd.DataFrame(record_counts)
                     
                     if primary_keys:
-                        # Create a DataFrame with primary keys and datetime using the same filtered indices
-                        pk_datetime_df = pd.DataFrame({
-                            '__datetime__': filtered_df['__datetime__'],
-                            **{pk: df.loc[filtered_df.index, pk] for pk in primary_keys}
-                        })
-                        
-                        # Drop duplicates based on primary keys and resample
-                        unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
-                        unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
-                        chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
+                        try:
+                            # Create a DataFrame with primary keys and datetime
+                            pk_datetime_df = pd.DataFrame({
+                                '__datetime__': filtered_df['__datetime__']
+                            })
+                            
+                            # Add primary keys by using the current dataframe
+                            for pk in primary_keys:
+                                if pk in df.columns:
+                                    # Get the values using the filtered indices
+                                    if isinstance(filtered_df.index, pd.MultiIndex):
+                                        # For multi-level index, get the first level
+                                        idx = filtered_df.index.get_level_values(0)
+                                    else:
+                                        idx = filtered_df.index
+                                    
+                                    # Use loc to get values by index
+                                    pk_values = df.loc[idx, pk].values
+                                    pk_datetime_df[pk] = pk_values
+                            
+                            # Drop duplicates based on primary keys and resample
+                            unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
+                            unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                            chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
+                        except Exception as e:
+                            st.warning(f"Could not calculate unique primary keys: {str(e)}")
                     
                     st.line_chart(chart_df)
                     continue
@@ -1254,13 +1301,33 @@ if df is not None:
                     elif table_type == 'Unique Values':
                         with st.expander("📋 View Unique Values (with counts)"):
                             st.dataframe(table_df, use_container_width=True)
-                
-            except Exception as e:
-                st.error(f"Error displaying results for column {col}: {str(e)}")
-    
-    # Clear the progress bar and status text
-    progress_bar.empty()
-    status_text.empty()
+        
+        # Clear the progress bar and status text
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Show progress
+        current_batch_size = len(current_batch)
+        st.info(f"Showing fields {start_idx + 1} to {end_idx} of {total_fields} (Batch {st.session_state.current_batch + 1} of {(total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size})")
+        
+        # Add navigation buttons with centered batch counter
+        st.markdown("---")  # Add a separator
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            if st.session_state.current_batch > 0:
+                if st.button("← Previous Batch", use_container_width=True):
+                    st.session_state.current_batch -= 1
+                    st.rerun()
+        with col2:
+            st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><strong>Batch {st.session_state.current_batch + 1} of {(total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size}</strong></div>", unsafe_allow_html=True)
+        with col3:
+            if end_idx < total_fields:
+                if st.button("Next Batch →", use_container_width=True):
+                    st.session_state.current_batch += 1
+                    st.rerun()
+        st.markdown("---")  # Add a separator
+    else:
+        st.success("✅ All fields have been processed!")
 
     st.markdown("## Pattern Detection")
     st.markdown("""
@@ -1279,224 +1346,251 @@ if df is not None:
     - **?** = Other
     """)
 
-    # Create progress bar for pattern detection
-    pattern_progress = st.progress(0)
-    pattern_status = st.empty()
+    # Initialize session state for pattern detection
+    if 'pattern_detection_run' not in st.session_state:
+        st.session_state.pattern_detection_run = False
 
-    # Process patterns in parallel
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        pattern_futures = {
-            executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
-            for col in df.columns
-        }
-        
-        all_pattern_info = []
-        total_columns = len(df.columns)
-        completed = 0
-        
-        for future in as_completed(pattern_futures):
-            col = pattern_futures[future]
-            completed += 1
-            pattern_progress.progress(completed / total_columns)
-            pattern_status.text(f"Processing patterns for column {completed}/{total_columns}: {col}")
+    if st.button("Run Pattern Detection"):
+        st.session_state.pattern_detection_run = True
+        st.rerun()
+
+    if st.session_state.pattern_detection_run:
+        # Create progress bar for pattern detection
+        pattern_progress = st.progress(0)
+        pattern_status = st.empty()
+
+        # Process patterns in parallel
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            pattern_futures = {
+                executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
+                for col in df.columns
+            }
             
-            try:
-                pattern_info = future.result()
-                all_pattern_info.extend(pattern_info)
-            except Exception as e:
-                st.error(f"Error processing patterns for column {col}: {str(e)}")
+            all_pattern_info = []
+            total_columns = len(df.columns)
+            completed = 0
+            
+            for future in as_completed(pattern_futures):
+                col = pattern_futures[future]
+                completed += 1
+                pattern_progress.progress(completed / total_columns)
+                pattern_status.text(f"Processing patterns for column {completed}/{total_columns}: {col}")
+                
+                try:
+                    pattern_info = future.result()
+                    all_pattern_info.extend(pattern_info)
+                except Exception as e:
+                    st.error(f"Error processing patterns for column {col}: {str(e)}")
 
-    # Clear progress indicators
-    pattern_progress.empty()
-    pattern_status.empty()
+        # Clear progress indicators
+        pattern_progress.empty()
+        pattern_status.empty()
 
-    pattern_df = pd.DataFrame(all_pattern_info)
+        pattern_df = pd.DataFrame(all_pattern_info)
 
-    if not pattern_df.empty:
-        st.markdown("### 📋 Detailed Pattern Report")
-        st.dataframe(pattern_df, use_container_width=True)
-
-        st.markdown("### 🌟 Most Common Pattern Per Field")
-        try:
-            top_patterns = pattern_df.sort_values('Confidence (%)', ascending=False).drop_duplicates('Field')
-            st.dataframe(top_patterns[['Field', 'Pattern', 'Example', 'Confidence (%)']], use_container_width=True)
-        except Exception as e:
-            st.error("Error generating most common patterns. No patterns found in the filtered data.")
-    else:
-        st.info("No patterns detected in the current data. Try adjusting your filters or check if the data contains any patterns.")
-
-    with st.expander("📤 Export Pattern Detection Results"):
         if not pattern_df.empty:
-            csv = pattern_df.to_csv(index=False).encode()
-            st.download_button("⬇️ Download CSV", data=csv, file_name="all_patterns.csv", mime="text/csv")
+            st.markdown("### 📋 Detailed Pattern Report")
+            st.dataframe(pattern_df, use_container_width=True)
 
-            html = pattern_df.to_html(index=False)
-            st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
+            st.markdown("### 🌟 Most Common Pattern Per Field")
+            try:
+                top_patterns = pattern_df.sort_values('Confidence (%)', ascending=False).drop_duplicates('Field')
+                st.dataframe(top_patterns[['Field', 'Pattern', 'Example', 'Confidence (%)']], use_container_width=True)
+            except Exception as e:
+                st.error("Error generating most common patterns. No patterns found in the filtered data.")
         else:
-            st.info("No patterns to export.")
+            st.info("No patterns detected in the current data. Try adjusting your filters or check if the data contains any patterns.")
+
+        with st.expander("📤 Export Pattern Detection Results"):
+            if not pattern_df.empty:
+                csv = pattern_df.to_csv(index=False).encode()
+                st.download_button("⬇️ Download CSV", data=csv, file_name="all_patterns.csv", mime="text/csv")
+
+                html = pattern_df.to_html(index=False)
+                st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
+            else:
+                st.info("No patterns to export.")
 
     if sidebar_visible:
         st.markdown("## Country/Region/Compliance/Business Unit Extraction Insights")
 
-        # Create progress bar for extractions
-        extraction_progress = st.progress(0)
-        extraction_status = st.empty()
+        # Initialize session state for extraction insights
+        if 'extraction_insights_run' not in st.session_state:
+            st.session_state.extraction_insights_run = False
 
-        # Process extractions in parallel
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            extraction_futures = {
-                executor.submit(
-                    process_extraction_parallel,
-                    df[col].dropna(),
-                    col,
-                    len(df),
-                    extract_country_region
-                ): col 
-                for col in df.select_dtypes(include=['object', 'string']).columns
-            }
-            
-            all_extraction_data = []
-            total_columns = len(df.select_dtypes(include=['object', 'string']).columns)
-            completed = 0
-            
-            for future in as_completed(extraction_futures):
-                col = extraction_futures[future]
-                completed += 1
-                extraction_progress.progress(completed / total_columns)
-                extraction_status.text(f"Processing extractions for column {completed}/{total_columns}: {col}")
+        if st.button("Run Extraction Insights"):
+            st.session_state.extraction_insights_run = True
+            st.rerun()
+
+        if st.session_state.extraction_insights_run:
+            # Create progress bar for extractions
+            extraction_progress = st.progress(0)
+            extraction_status = st.empty()
+
+            # Process extractions in parallel
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                extraction_futures = {
+                    executor.submit(
+                        process_extraction_parallel,
+                        df[col].dropna(),
+                        col,
+                        len(df),
+                        extract_country_region
+                    ): col 
+                    for col in df.select_dtypes(include=['object', 'string']).columns
+                }
                 
-                try:
-                    extraction_data = future.result()
-                    if extraction_data:  # Only extend if we got results
-                        all_extraction_data.extend(extraction_data)
-                except Exception as e:
-                    st.error(f"Error processing extractions for column {col}: {str(e)}")
+                all_extraction_data = []
+                total_columns = len(df.select_dtypes(include=['object', 'string']).columns)
+                completed = 0
+                
+                for future in as_completed(extraction_futures):
+                    col = extraction_futures[future]
+                    completed += 1
+                    extraction_progress.progress(completed / total_columns)
+                    extraction_status.text(f"Processing extractions for column {completed}/{total_columns}: {col}")
+                    
+                    try:
+                        extraction_data = future.result()
+                        if extraction_data:  # Only extend if we got results
+                            all_extraction_data.extend(extraction_data)
+                    except Exception as e:
+                        st.error(f"Error processing extractions for column {col}: {str(e)}")
 
-        # Clear progress indicators
-        extraction_progress.empty()
-        extraction_status.empty()
+            # Clear progress indicators
+            extraction_progress.empty()
+            extraction_status.empty()
 
-        # Process results by category
-        summary_data = []
-        region_summary_data = []
-        compliance_summary_data = []
-        business_unit_summary_data = []
+            # Process results by category
+            summary_data = []
+            region_summary_data = []
+            compliance_summary_data = []
+            business_unit_summary_data = []
 
-        for data in all_extraction_data:
-            if 'Countries Found' in data:
-                summary_data.append(data)
-            if 'Regions Found' in data:
-                region_summary_data.append(data)
-            if 'Compliance Found' in data:
-                compliance_summary_data.append(data)
-            if 'Business Units Found' in data:
-                business_unit_summary_data.append(data)
+            for data in all_extraction_data:
+                if 'Countries Found' in data:
+                    summary_data.append(data)
+                if 'Regions Found' in data:
+                    region_summary_data.append(data)
+                if 'Compliance Found' in data:
+                    compliance_summary_data.append(data)
+                if 'Business Units Found' in data:
+                    business_unit_summary_data.append(data)
 
-        # Create DataFrames for summaries
-        summary_df = pd.DataFrame(summary_data) if summary_data else pd.DataFrame()
-        region_summary_df = pd.DataFrame(region_summary_data) if region_summary_data else pd.DataFrame()
-        compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
-        business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
+            # Create DataFrames for summaries
+            summary_df = pd.DataFrame(summary_data) if summary_data else pd.DataFrame()
+            region_summary_df = pd.DataFrame(region_summary_data) if region_summary_data else pd.DataFrame()
+            compliance_summary_df = pd.DataFrame(compliance_summary_data) if compliance_summary_data else pd.DataFrame()
+            business_unit_summary_df = pd.DataFrame(business_unit_summary_data) if business_unit_summary_data else pd.DataFrame()
 
-        # Display summaries
-        if not summary_df.empty:
-            st.write("### 🌍 Country Extraction Summary by Column")
-            st.dataframe(summary_df)
-            with st.expander("📤 Export Country Results"):
-                csv = summary_df.to_csv(index=False).encode()
-                st.download_button("📄 Download as CSV", data=csv, file_name="country_extraction.csv", mime="text/csv")
-        else:
-            st.write("No countries were extracted from the data.")
+            # Display summaries
+            if not summary_df.empty:
+                st.write("### 🌍 Country Extraction Summary by Column")
+                st.dataframe(summary_df)
+                with st.expander("📤 Export Country Results"):
+                    csv = summary_df.to_csv(index=False).encode()
+                    st.download_button("📄 Download as CSV", data=csv, file_name="country_extraction.csv", mime="text/csv")
+            else:
+                st.write("No countries were extracted from the data.")
 
-        if not region_summary_df.empty:
-            st.write("### 🌐 Region Extraction Summary by Column")
-            st.dataframe(region_summary_df)
-            with st.expander("📤 Export Region Results"):
-                csv = region_summary_df.to_csv(index=False).encode()
-                st.download_button("📄 Download as CSV", data=csv, file_name="region_extraction.csv", mime="text/csv")
-        else:
-            st.write("No regions were extracted from the data.")
+            if not region_summary_df.empty:
+                st.write("### 🌐 Region Extraction Summary by Column")
+                st.dataframe(region_summary_df)
+                with st.expander("📤 Export Region Results"):
+                    csv = region_summary_df.to_csv(index=False).encode()
+                    st.download_button("📄 Download as CSV", data=csv, file_name="region_extraction.csv", mime="text/csv")
+            else:
+                st.write("No regions were extracted from the data.")
 
-        if not compliance_summary_df.empty:
-            st.write("### 📋 Compliance Extraction Summary by Column")
-            st.dataframe(compliance_summary_df)
-            with st.expander("📤 Export Compliance Results"):
-                csv = compliance_summary_df.to_csv(index=False).encode()
-                st.download_button("📄 Download as CSV", data=csv, file_name="compliance_extraction.csv", mime="text/csv")
-        else:
-            st.write("No compliance terms were extracted from the data.")
+            if not compliance_summary_df.empty:
+                st.write("### 📋 Compliance Extraction Summary by Column")
+                st.dataframe(compliance_summary_df)
+                with st.expander("📤 Export Compliance Results"):
+                    csv = compliance_summary_df.to_csv(index=False).encode()
+                    st.download_button("📄 Download as CSV", data=csv, file_name="compliance_extraction.csv", mime="text/csv")
+            else:
+                st.write("No compliance terms were extracted from the data.")
 
-        if not business_unit_summary_df.empty:
-            st.write("### 🏢 Business Unit Extraction Summary by Column")
-            st.dataframe(business_unit_summary_df)
-            with st.expander("📤 Export Business Unit Results"):
-                csv = business_unit_summary_df.to_csv(index=False).encode()
-                st.download_button("📄 Download as CSV", data=csv, file_name="business_unit_extraction.csv", mime="text/csv")
-        else:
-            st.write("No business units were extracted from the data.")
+            if not business_unit_summary_df.empty:
+                st.write("### 🏢 Business Unit Extraction Summary by Column")
+                st.dataframe(business_unit_summary_df)
+                with st.expander("📤 Export Business Unit Results"):
+                    csv = business_unit_summary_df.to_csv(index=False).encode()
+                    st.download_button("📄 Download as CSV", data=csv, file_name="business_unit_extraction.csv", mime="text/csv")
+            else:
+                st.write("No business units were extracted from the data.")
 
     # --- Custom Extraction Summary ---
     if "custom_categories" in st.session_state and st.session_state.custom_categories and len(st.session_state.custom_categories) > 0:
         st.markdown('<div id="custom-extraction-insights"></div>', unsafe_allow_html=True)
         st.markdown("## Custom Extraction Insights")
         
-        with st.expander("🔧 Debug: Current Custom Categories"):
-            st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
-            for cat, meta in st.session_state.custom_categories.items():
-                st.write(f"- {cat}: {len(meta['keywords'])} keywords")
+        # Initialize session state for custom extraction
+        if 'custom_extraction_run' not in st.session_state:
+            st.session_state.custom_extraction_run = False
 
-        total_records = len(df)
+        if st.button("Run Custom Extraction"):
+            st.session_state.custom_extraction_run = True
+            st.rerun()
 
-        for category_name, meta in st.session_state.custom_categories.items():
-            automaton = meta["automaton"]
-            
-            # Create progress bar for custom extraction
-            custom_progress = st.progress(0)
-            custom_status = st.empty()
+        if st.session_state.custom_extraction_run:
+            with st.expander("🔧 Debug: Current Custom Categories"):
+                st.write("Active custom categories:", list(st.session_state.custom_categories.keys()))
+                for cat, meta in st.session_state.custom_categories.items():
+                    st.write(f"- {cat}: {len(meta['keywords'])} keywords")
 
-            st.subheader(f"🔍 Extraction Summary for `{category_name}`")
+            total_records = len(df)
 
-            # Process custom extractions in parallel
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                custom_futures = {
-                    executor.submit(
-                        process_custom_extraction_parallel,
-                        df[col].dropna(),
-                        col,
-                        total_records,
-                        category_name,
-                        automaton
-                    ): col 
-                    for col in df.select_dtypes(include=["object", "string"]).columns
-                }
+            for category_name, meta in st.session_state.custom_categories.items():
+                automaton = meta["automaton"]
                 
-                all_custom_data = []
-                total_columns = len(df.select_dtypes(include=["object", "string"]).columns)
-                completed = 0
-                
-                for future in as_completed(custom_futures):
-                    col = custom_futures[future]
-                    completed += 1
-                    custom_progress.progress(completed / total_columns)
-                    custom_status.text(f"Processing {category_name} extraction for column {completed}/{total_columns}: {col}")
+                # Create progress bar for custom extraction
+                custom_progress = st.progress(0)
+                custom_status = st.empty()
+
+                st.subheader(f"🔍 Extraction Summary for `{category_name}`")
+
+                # Process custom extractions in parallel
+                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                    custom_futures = {
+                        executor.submit(
+                            process_custom_extraction_parallel,
+                            df[col].dropna(),
+                            col,
+                            total_records,
+                            category_name,
+                            automaton
+                        ): col 
+                        for col in df.select_dtypes(include=["object", "string"]).columns
+                    }
                     
-                    try:
-                        custom_data = future.result()
-                        all_custom_data.extend(custom_data)
-                    except Exception as e:
-                        st.error(f"Error processing custom extraction for column {col}: {str(e)}")
+                    all_custom_data = []
+                    total_columns = len(df.select_dtypes(include=["object", "string"]).columns)
+                    completed = 0
+                    
+                    for future in as_completed(custom_futures):
+                        col = custom_futures[future]
+                        completed += 1
+                        custom_progress.progress(completed / total_columns)
+                        custom_status.text(f"Processing {category_name} extraction for column {completed}/{total_columns}: {col}")
+                        
+                        try:
+                            custom_data = future.result()
+                            all_custom_data.extend(custom_data)
+                        except Exception as e:
+                            st.error(f"Error processing custom extraction for column {col}: {str(e)}")
 
-            # Clear progress indicators
-            custom_progress.empty()
-            custom_status.empty()
+                # Clear progress indicators
+                custom_progress.empty()
+                custom_status.empty()
 
-            summary_df = pd.DataFrame(all_custom_data)
+                summary_df = pd.DataFrame(all_custom_data)
 
-            if not summary_df.empty:
-                st.markdown(f"### Summary Table for `{category_name}`")
-                st.dataframe(summary_df)
-            else:
-                st.info(f"No `{category_name}` matches found.")
+                if not summary_df.empty:
+                    st.markdown(f"### Summary Table for `{category_name}`")
+                    st.dataframe(summary_df)
+                else:
+                    st.info(f"No `{category_name}` matches found.")
 
 
 if st.button("💾 Save Session"):
