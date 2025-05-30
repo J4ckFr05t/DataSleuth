@@ -1086,181 +1086,211 @@ if df is not None:
     # Use 75% of available cores to avoid overwhelming the system
     num_workers = max(1, int(num_cores * 0.75))
     
-    # Create a progress bar
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # Initialize session state for batch processing if not exists
+    if 'processed_fields' not in st.session_state:
+        st.session_state.processed_fields = set()
+    if 'batch_size' not in st.session_state:
+        st.session_state.batch_size = 5
     
-    # Process columns in parallel
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        # Create a partial function with the common arguments
-        process_func = partial(process_single_column, 
-                             total_records=len(df),
-                             primary_keys=primary_keys if 'primary_keys' in locals() else None,
-                             original_df=df)  # Pass the original DataFrame
+    # Get remaining fields to process
+    all_fields = set(df.columns)
+    remaining_fields = list(all_fields - st.session_state.processed_fields)
+    
+    # Process fields in batches
+    if remaining_fields:
+        # Get next batch of fields
+        current_batch = remaining_fields[:st.session_state.batch_size]
         
-        # Submit all columns for processing
-        future_to_col = {
-            executor.submit(process_func, df[col], col): col 
-            for col in df.columns
-        }
+        # Create a progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        # Process results as they complete
-        total_columns = len(df.columns)
-        completed = 0
-        
-        for future in as_completed(future_to_col):
-            col = future_to_col[future]
-            completed += 1
-            progress_bar.progress(completed / total_columns)
-            status_text.text(f"Processing column {completed}/{total_columns}: {col}")
+        # Process columns in parallel
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Create a partial function with the common arguments
+            process_func = partial(process_single_column, 
+                                 total_records=len(df),
+                                 primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                 original_df=df)  # Pass the original DataFrame
             
-            try:
-                insights = future.result()
+            # Submit current batch for processing
+            future_to_col = {
+                executor.submit(process_func, df[col], col): col 
+                for col in current_batch
+            }
+            
+            # Process results as they complete
+            total_columns = len(current_batch)
+            completed = 0
+            
+            for future in as_completed(future_to_col):
+                col = future_to_col[future]
+                completed += 1
+                progress_bar.progress(completed / total_columns)
+                status_text.text(f"Processing column {completed}/{total_columns}: {col}")
                 
-                # Display the insights for this column
-                st.markdown(f"### 🧬 {insights['column_name']}")
-                
-                if 'error' in insights:
-                    st.error(f"Error processing column: {insights['error']}")
-                    continue
-                
-                # Display coverage
-                if insights['text_content']:
-                    st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
-                              text=insights['text_content'][0])
-                
-                # Handle datetime columns
-                if insights.get('is_datetime'):
-                    st.markdown("#### 📈 Trend (Date/Time Field)")
-                    parsed_col = insights['parsed_datetime']
+                try:
+                    insights = future.result()
                     
-                    # Create datetime visualization UI
-                    freq = st.selectbox(
-                        f"Choose trend resolution for `{col}`",
-                        options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
-                        index=0,
-                        key=f"freq_{col}"
-                    )
+                    # Display the insights for this column
+                    st.markdown(f"### 🧬 {insights['column_name']}")
                     
-                    freq_map = {
-                        "Daily": "D",
-                        "Weekly": "W",
-                        "Monthly": "M",
-                        "Quarterly": "Q",
-                        "Yearly": "Y"
-                    }
+                    if 'error' in insights:
+                        st.error(f"Error processing column: {insights['error']}")
+                        continue
                     
-                    show_all_dates = st.checkbox(
-                        f"Show all dates for `{col}`",
-                        value=False,
-                        key=f"show_all_{col}"
-                    )
+                    # Display coverage
+                    if insights['text_content']:
+                        st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
+                                  text=insights['text_content'][0])
                     
-                    # Get the original index of non-null datetime values
-                    valid_datetime_mask = parsed_col.notna()
-                    original_indices = parsed_col.index[valid_datetime_mask]
-                    
-                    # Create a DataFrame with the datetime column and original index
-                    datetime_df = pd.DataFrame({
-                        '__datetime__': parsed_col[valid_datetime_mask]
-                    }, index=original_indices)
-                    
-                    if not show_all_dates:
-                        min_date = parsed_col.min().date()
-                        max_date = parsed_col.max().date()
-                        start_date, end_date = st.date_input(
-                            f"Select date range for `{col}`",
-                            value=(min_date, max_date),
-                            min_value=min_date,
-                            max_value=max_date,
-                            key=f"range_{col}"
+                    # Handle datetime columns
+                    if insights.get('is_datetime'):
+                        st.markdown("#### 📈 Trend (Date/Time Field)")
+                        parsed_col = insights['parsed_datetime']
+                        
+                        # Create datetime visualization UI
+                        freq = st.selectbox(
+                            f"Choose trend resolution for `{col}`",
+                            options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
+                            index=0,
+                            key=f"freq_{col}"
                         )
                         
-                        # Filter the datetime DataFrame using boolean indexing
-                        date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
-                                  (datetime_df['__datetime__'].dt.date <= end_date)
-                        filtered_df = datetime_df[date_mask].copy()
-                    else:
-                        filtered_df = datetime_df.copy()
-                    
-                    # Resample and count records
-                    resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
-                    record_counts = resampled.size().rename("Total Records")
-                    chart_df = pd.DataFrame(record_counts)
-                    
-                    if primary_keys:
-                        # Create a DataFrame with primary keys and datetime using the same filtered indices
-                        pk_datetime_df = pd.DataFrame({
-                            '__datetime__': filtered_df['__datetime__'],
-                            **{pk: df.loc[filtered_df.index, pk] for pk in primary_keys}
-                        })
+                        freq_map = {
+                            "Daily": "D",
+                            "Weekly": "W",
+                            "Monthly": "M",
+                            "Quarterly": "Q",
+                            "Yearly": "Y"
+                        }
                         
-                        # Drop duplicates based on primary keys and resample
-                        unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
-                        unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
-                        chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
-                    
-                    st.line_chart(chart_df)
-                    continue
-                
-                # Display wordcloud if available
-                if 'wordcloud_text' in insights:
-                    st.markdown("#### ☁️ Word Cloud (Long Text Field)")
-                    try:
-                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
-                        fig, ax = plt.subplots(figsize=(10, 5))
-                        fig.patch.set_alpha(0)
-                        ax.imshow(wordcloud, interpolation='bilinear')
-                        ax.axis("off")
-                        st.pyplot(fig)
-                    except Exception as e:
-                        st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
-                
-                # Display charts
-                for chart_type, chart_df in insights['charts']:
-                    if chart_type == 'bar_chart':
-                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
-                        st.altair_chart(chart, use_container_width=True)
-                    elif chart_type == 'bar_chart_pk':
-                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
-                        st.markdown("#### Top Values (Per Primary Key)")
-                        st.altair_chart(chart, use_container_width=True)
-                    elif chart_type == 'donut_chart':
-                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
-                        st.plotly_chart(fig, use_container_width=True)
-                    elif chart_type == 'donut_chart_pk':
-                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
-                        st.markdown("#### Value Distribution (Per Primary Key)")
-                        st.plotly_chart(fig, use_container_width=True)
-                    elif chart_type == 'histogram':
-                        hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
-                            alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
-                            y=alt.Y('count()', title='Count')
-                        ).properties(
-                            width=600,
-                            height=300,
-                            title="Distribution"
+                        show_all_dates = st.checkbox(
+                            f"Show all dates for `{col}`",
+                            value=False,
+                            key=f"show_all_{col}"
                         )
-                        st.altair_chart(hist, use_container_width=True)
-                
-                # Display tables
-                for table_type, table_df in insights['tables']:
-                    if table_type == 'value_counts':
-                        st.markdown("### 📊 Value Counts and Percentages")
-                        st.dataframe(table_df, use_container_width=True)
-                    elif table_type == 'value_counts_pk':
-                        st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
-                        st.dataframe(table_df, use_container_width=True)
-                    elif table_type == 'Unique Values':
-                        with st.expander("📋 View Unique Values (with counts)"):
+                        
+                        # Get the original index of non-null datetime values
+                        valid_datetime_mask = parsed_col.notna()
+                        original_indices = parsed_col.index[valid_datetime_mask]
+                        
+                        # Create a DataFrame with the datetime column and original index
+                        datetime_df = pd.DataFrame({
+                            '__datetime__': parsed_col[valid_datetime_mask]
+                        }, index=original_indices)
+                        
+                        if not show_all_dates:
+                            min_date = parsed_col.min().date()
+                            max_date = parsed_col.max().date()
+                            start_date, end_date = st.date_input(
+                                f"Select date range for `{col}`",
+                                value=(min_date, max_date),
+                                min_value=min_date,
+                                max_value=max_date,
+                                key=f"range_{col}"
+                            )
+                            
+                            # Filter the datetime DataFrame using boolean indexing
+                            date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
+                                      (datetime_df['__datetime__'].dt.date <= end_date)
+                            filtered_df = datetime_df[date_mask].copy()
+                        else:
+                            filtered_df = datetime_df.copy()
+                        
+                        # Resample and count records
+                        resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
+                        record_counts = resampled.size().rename("Total Records")
+                        chart_df = pd.DataFrame(record_counts)
+                        
+                        if primary_keys:
+                            # Create a DataFrame with primary keys and datetime using the same filtered indices
+                            pk_datetime_df = pd.DataFrame({
+                                '__datetime__': filtered_df['__datetime__'],
+                                **{pk: df.loc[filtered_df.index, pk] for pk in primary_keys}
+                            })
+                            
+                            # Drop duplicates based on primary keys and resample
+                            unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
+                            unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                            chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
+                        
+                        st.line_chart(chart_df)
+                        continue
+                    
+                    # Display wordcloud if available
+                    if 'wordcloud_text' in insights:
+                        st.markdown("#### ☁️ Word Cloud (Long Text Field)")
+                        try:
+                            wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
+                            fig, ax = plt.subplots(figsize=(10, 5))
+                            fig.patch.set_alpha(0)
+                            ax.imshow(wordcloud, interpolation='bilinear')
+                            ax.axis("off")
+                            st.pyplot(fig)
+                        except Exception as e:
+                            st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
+                    
+                    # Display charts
+                    for chart_type, chart_df in insights['charts']:
+                        if chart_type == 'bar_chart':
+                            chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                            st.altair_chart(chart, use_container_width=True)
+                        elif chart_type == 'bar_chart_pk':
+                            chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                            st.markdown("#### Top Values (Per Primary Key)")
+                            st.altair_chart(chart, use_container_width=True)
+                        elif chart_type == 'donut_chart':
+                            fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        elif chart_type == 'donut_chart_pk':
+                            fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                            st.markdown("#### Value Distribution (Per Primary Key)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        elif chart_type == 'histogram':
+                            hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                                alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                                y=alt.Y('count()', title='Count')
+                            ).properties(
+                                width=600,
+                                height=300,
+                                title="Distribution"
+                            )
+                            st.altair_chart(hist, use_container_width=True)
+                    
+                    # Display tables
+                    for table_type, table_df in insights['tables']:
+                        if table_type == 'value_counts':
+                            st.markdown("### 📊 Value Counts and Percentages")
                             st.dataframe(table_df, use_container_width=True)
+                        elif table_type == 'value_counts_pk':
+                            st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                            st.dataframe(table_df, use_container_width=True)
+                        elif table_type == 'Unique Values':
+                            with st.expander("📋 View Unique Values (with counts)"):
+                                st.dataframe(table_df, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"Error displaying results for column {col}: {str(e)}")
                 
-            except Exception as e:
-                st.error(f"Error displaying results for column {col}: {str(e)}")
-    
-    # Clear the progress bar and status text
-    progress_bar.empty()
-    status_text.empty()
+                # Add processed field to session state
+                st.session_state.processed_fields.add(col)
+        
+        # Clear the progress bar and status text
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Add "Load More" button if there are remaining fields
+        if len(remaining_fields) > st.session_state.batch_size:
+            if st.button("Load More Fields"):
+                st.rerun()
+        
+        # Show progress
+        total_fields = len(all_fields)
+        processed_count = len(st.session_state.processed_fields)
+        st.info(f"Processed {processed_count} out of {total_fields} fields ({processed_count/total_fields*100:.1f}%)")
+    else:
+        st.success("✅ All fields have been processed!")
 
     st.markdown("## Pattern Detection")
     st.markdown("""
