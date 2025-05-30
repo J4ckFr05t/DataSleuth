@@ -1103,12 +1103,6 @@ if df is not None:
     all_fields = list(df.columns)
     total_fields = len(all_fields)
     
-    # Debug information
-    st.sidebar.markdown("### Debug Info")
-    st.sidebar.write(f"Total fields: {total_fields}")
-    st.sidebar.write(f"Current batch: {st.session_state.current_batch}")
-    st.sidebar.write(f"Processed fields: {len(st.session_state.processed_fields)}")
-    
     # Process all fields in parallel first
     if not st.session_state.processed_fields:
         st.info("Processing all fields... This may take a moment.")
