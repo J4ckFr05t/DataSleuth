@@ -802,7 +802,36 @@ if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not
     elif uploaded_file.name.endswith(".json"):
         try:
             # Try to read as JSON first
-            df = pd.read_json(uploaded_file)
+            json_data = json.load(uploaded_file)
+            
+            # Function to flatten nested JSON structure
+            def flatten_json(data, parent_key='', sep='_'):
+                items = []
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                        if isinstance(v, (dict, list)):
+                            items.extend(flatten_json(v, new_key, sep=sep).items())
+                        else:
+                            items.append((new_key, v))
+                elif isinstance(data, list):
+                    for i, item in enumerate(data):
+                        new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+                        if isinstance(item, (dict, list)):
+                            items.extend(flatten_json(item, new_key, sep=sep).items())
+                        else:
+                            items.append((new_key, item))
+                return dict(items)
+            
+            # If the JSON is a list of objects, process each object
+            if isinstance(json_data, list):
+                flattened_data = [flatten_json(item) for item in json_data]
+                df = pd.DataFrame(flattened_data)
+            else:
+                # If it's a single object, flatten it and create a single-row DataFrame
+                flattened_data = flatten_json(json_data)
+                df = pd.DataFrame([flattened_data])
+                
         except Exception as e:
             # If that fails, try to read as JSON lines
             try:
