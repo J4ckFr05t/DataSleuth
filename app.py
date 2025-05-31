@@ -799,9 +799,11 @@ toc = """
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
 - [Pattern Detection](#pattern-detection)
+- [Outlier Detection](#outlier-detection)
+- [Advanced Outlier Detection](#advanced-outlier-detection)
 """
 
-# Only add Country/Region Extraction Insights to TOC if sidebar is visible
+# Add Country/Region Extraction Insights to TOC if sidebar is visible
 if st.session_state.get('sidebar_visible', True):
     toc += "\n- [Country/Region/Compliance/Business Unit Extraction Insights](#country-region-compliance-business-unit-extraction-insights)"
 
