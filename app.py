@@ -455,10 +455,6 @@ body {
     background-color: #121212;
     color: #e0e0e0;
 }
-.stButton>button {
-    background-color: #333 !important;
-    color: white !important;
-}
 </style>
 """
 st.markdown(dark_style, unsafe_allow_html=True)
@@ -667,7 +663,7 @@ if 'business_unit_input' not in st.session_state:
 
 # Country/Region/Compliance/Business Unit Configs Section
 st.sidebar.markdown("### 🌍 Extraction Configs")
-sidebar_visible = st.sidebar.checkbox("Show/Hide Extraction Configs", value=True, key='sidebar_visible')
+sidebar_visible = st.sidebar.checkbox("Enable/Disable Built-in Extraction Configs", value=True, key='sidebar_visible')
 
 if sidebar_visible:
     countries_input = st.sidebar.text_area(
@@ -1142,8 +1138,10 @@ if df is not None:
         
         # Display insights for current batch
         for i, col in enumerate(current_batch):
-            progress_bar.progress((i + 1) / len(current_batch))
-            status_text.text(f"Displaying column {i + 1}/{len(current_batch)}: {col}")
+            # Calculate overall progress including previous batches
+            overall_progress = (start_idx + i + 1) / total_fields
+            progress_bar.progress(overall_progress)
+            status_text.text(f"Displaying column {start_idx + i + 1}/{total_fields}: {col}")
             
             if col in st.session_state.processed_fields:
                 insights = st.session_state.processed_fields[col]
@@ -1315,16 +1313,44 @@ if df is not None:
         col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
             if st.session_state.current_batch > 0:
-                if st.button("← Previous Batch", use_container_width=True):
+                if st.button("← Previous", use_container_width=True):
                     st.session_state.current_batch -= 1
                     st.rerun()
+            else:
+                st.button("← Previous", use_container_width=True, disabled=True)
         with col2:
-            st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><strong>Batch {st.session_state.current_batch + 1} of {(total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size}</strong></div>", unsafe_allow_html=True)
+            total_batches = (total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size
+            current_page = st.session_state.current_batch + 1
+            
+            # Create a container for the page navigation
+            with st.container():
+                # Add page number input with consistent height
+                new_page = st.number_input(
+                    "Page",
+                    min_value=1,
+                    max_value=total_batches,
+                    value=current_page,
+                    key="page_input",
+                    label_visibility="collapsed"
+                )
+                
+                # If page number changes, update the current batch
+                if new_page != current_page:
+                    st.session_state.current_batch = new_page - 1
+                    st.rerun()
+                
+                # Center the page counter text
+                st.markdown(
+                    f"<div style='text-align: center; padding: 0.5rem;'><strong>{new_page} of {total_batches}</strong></div>",
+                    unsafe_allow_html=True
+                )
         with col3:
             if end_idx < total_fields:
-                if st.button("Next Batch →", use_container_width=True):
+                if st.button("Next →", use_container_width=True):
                     st.session_state.current_batch += 1
                     st.rerun()
+            else:
+                st.button("Next →", use_container_width=True, disabled=True)
         st.markdown("---")  # Add a separator
     else:
         st.success("✅ All fields have been processed!")
