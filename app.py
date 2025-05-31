@@ -451,11 +451,6 @@ st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state
 # Dark mode style
 dark_style = """
 <style>
-body {
-    background-color: #121212;
-    color: #e0e0e0;
-}
-
 /* Terminal-like loading screen styles */
 .terminal-container {
     position: fixed;
@@ -463,7 +458,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: #121212;
+    background-color: var(--background-color);
     z-index: 9999;
     display: flex;
     justify-content: center;
@@ -474,25 +469,54 @@ body {
     width: 600px;
     height: 300px;
     background-color: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 5px;
+    border: 2px solid #333;
+    border-radius: 8px;
     padding: 20px;
     font-family: 'Courier New', monospace;
     position: relative;
     overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.terminal::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    background: #333;
+    border-radius: 6px 6px 0 0;
+    z-index: 1;
+}
+
+.terminal::after {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 12px;
+    height: 12px;
+    background: #ff5f56;
+    border-radius: 50%;
+    box-shadow: 20px 0 0 #ffbd2e, 40px 0 0 #27c93f;
+    z-index: 2;
 }
 
 .terminal-header {
     color: #888;
     border-bottom: 1px solid #333;
-    padding-bottom: 10px;
+    padding: 35px 0 10px 0;
     margin-bottom: 20px;
     font-size: 0.9em;
+    position: relative;
+    z-index: 1;
 }
 
 .terminal-content {
     position: relative;
     height: calc(100% - 40px);
+    z-index: 1;
 }
 
 .terminal-line {
@@ -501,6 +525,7 @@ body {
     opacity: 0;
     transform: translateY(10px);
     animation: terminalFadeIn 0.5s ease forwards;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
 }
 
 .terminal-cursor {
@@ -510,6 +535,7 @@ body {
     background-color: #00ff00;
     margin-left: 5px;
     animation: blink 1s infinite;
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
 }
 
 @keyframes terminalFadeIn {
@@ -521,6 +547,26 @@ body {
 
 @keyframes blink {
     50% { opacity: 0; }
+}
+
+/* Theme-aware variables */
+:root {
+    --background-color: var(--background-color, #ffffff);
+    --secondary-background-color: var(--secondary-background-color, #f0f2f6);
+    --text-color: var(--text-color, #262730);
+    --border-color: var(--border-color, #e6e6e6);
+    --accent-color: var(--accent-color, #00acb5);
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background-color: #121212;
+        --secondary-background-color: #1a1a1a;
+        --text-color: #e0e0e0;
+        --border-color: #333;
+        --accent-color: #00ff00;
+    }
 }
 </style>
 """
@@ -554,9 +600,9 @@ if not st.session_state.loading_complete:
             <div class="terminal-content">
     """
     
-    # Add each message with increasing delay
+    # Add each message with shorter delay
     for i, message in enumerate(loading_messages):
-        delay = i * 1.5  # 1.5 seconds between each message
+        delay = i * 0.5  # Reduced from 1.5 to 0.5 seconds between each message
         terminal_html += f'<div class="terminal-line" style="animation-delay: {delay}s">{message}<span class="terminal-cursor"></span></div>'
     
     terminal_html += """
@@ -567,8 +613,8 @@ if not st.session_state.loading_complete:
     
     st.markdown(terminal_html, unsafe_allow_html=True)
     
-    # Wait for all messages to complete
-    time.sleep(len(loading_messages) * 1.5 + 1)  # Add 1 second buffer
+    # Wait for all messages to complete with shorter buffer
+    time.sleep(len(loading_messages) * 0.5 + 0.5)  # Reduced from 1.5 to 0.5 seconds per message, and buffer from 1 to 0.5
     
     # Mark loading as complete
     st.session_state.loading_complete = True
