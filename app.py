@@ -455,6 +455,73 @@ body {
     background-color: #121212;
     color: #e0e0e0;
 }
+
+/* Terminal-like loading screen styles */
+.terminal-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #121212;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.terminal {
+    width: 600px;
+    height: 300px;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 20px;
+    font-family: 'Courier New', monospace;
+    position: relative;
+    overflow: hidden;
+}
+
+.terminal-header {
+    color: #888;
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    font-size: 0.9em;
+}
+
+.terminal-content {
+    position: relative;
+    height: calc(100% - 40px);
+}
+
+.terminal-line {
+    color: #00ff00;
+    margin: 5px 0;
+    opacity: 0;
+    transform: translateY(10px);
+    animation: terminalFadeIn 0.5s ease forwards;
+}
+
+.terminal-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background-color: #00ff00;
+    margin-left: 5px;
+    animation: blink 1s infinite;
+}
+
+@keyframes terminalFadeIn {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
 </style>
 """
 st.markdown(dark_style, unsafe_allow_html=True)
@@ -462,6 +529,50 @@ st.markdown(dark_style, unsafe_allow_html=True)
 # Add analysis time tracking
 if 'analysis_start_time' not in st.session_state:
     st.session_state.analysis_start_time = time.time()
+
+# Initialize loading screen state
+if 'loading_complete' not in st.session_state:
+    st.session_state.loading_complete = False
+
+# Show loading screen if not complete
+if not st.session_state.loading_complete:
+    loading_messages = [
+        "Initializing DataSleuth...",
+        "Loading analysis modules...",
+        "Preparing visualization engines...",
+        "Setting up data processing pipelines...",
+        "Ready to analyze your data!"
+    ]
+    
+    # Create terminal container
+    terminal_html = """
+    <div class="terminal-container">
+        <div class="terminal">
+            <div class="terminal-header">
+                DataSleuth Terminal v1.0.0
+            </div>
+            <div class="terminal-content">
+    """
+    
+    # Add each message with increasing delay
+    for i, message in enumerate(loading_messages):
+        delay = i * 1.5  # 1.5 seconds between each message
+        terminal_html += f'<div class="terminal-line" style="animation-delay: {delay}s">{message}<span class="terminal-cursor"></span></div>'
+    
+    terminal_html += """
+            </div>
+        </div>
+    </div>
+    """
+    
+    st.markdown(terminal_html, unsafe_allow_html=True)
+    
+    # Wait for all messages to complete
+    time.sleep(len(loading_messages) * 1.5 + 1)  # Add 1 second buffer
+    
+    # Mark loading as complete
+    st.session_state.loading_complete = True
+    st.rerun()
 
 st.title("📊 DataSleuth - Smart EDA Viewer")
 
