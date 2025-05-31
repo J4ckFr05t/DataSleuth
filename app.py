@@ -466,8 +466,8 @@ dark_style = """
 }
 
 .terminal {
-    width: 600px;
-    height: 300px;
+    width: 800px;
+    height: 400px;
     background-color: #1a1a1a;
     border: 2px solid #333;
     border-radius: 8px;
