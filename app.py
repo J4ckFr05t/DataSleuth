@@ -1123,65 +1123,71 @@ if df is not None:
         st.session_state.batch_size = 5
     if 'current_batch' not in st.session_state:
         st.session_state.current_batch = 0
+    if 'view_mode' not in st.session_state:
+        st.session_state.view_mode = "View All Fields (Paginated)"
+    if 'selected_field' not in st.session_state:
+        st.session_state.selected_field = None
     
     # Get all fields
     all_fields = list(df.columns)
     total_fields = len(all_fields)
+
+    # Add field selection option
+    st.markdown("### 🔍 Field Selection")
+    view_mode = st.radio(
+        "Choose how to view field insights:",
+        ["View All Fields (Paginated)", "Select Specific Field"],
+        horizontal=True,
+        key="view_mode_radio",
+        index=0 if st.session_state.view_mode == "View All Fields (Paginated)" else 1
+    )
     
-    # Process all fields in parallel first
-    if not st.session_state.processed_fields:
-        st.info("Processing all fields... This may take a moment.")
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # Create a partial function with the common arguments
-            process_func = partial(process_single_column, 
-                                 total_records=len(df),
-                                 primary_keys=primary_keys if 'primary_keys' in locals() else None,
-                                 original_df=df)
-            
-            # Submit all fields for processing
-            future_to_col = {
-                executor.submit(process_func, df[col], col): col 
-                for col in all_fields
-            }
-            
-            # Process results as they complete
-            for future in as_completed(future_to_col):
-                col = future_to_col[future]
+    # Update session state view mode
+    st.session_state.view_mode = view_mode
+
+    if view_mode == "Select Specific Field":
+        # If we have a previously selected field and it still exists in the filtered data, use it
+        if st.session_state.selected_field and st.session_state.selected_field in all_fields:
+            default_field = st.session_state.selected_field
+        else:
+            default_field = all_fields[0] if all_fields else None
+            st.session_state.selected_field = default_field
+
+        selected_field = st.selectbox(
+            "Select a field to analyze:",
+            options=all_fields,
+            key="field_selector",
+            index=all_fields.index(default_field) if default_field else 0
+        )
+        
+        # Update session state selected field
+        st.session_state.selected_field = selected_field
+        
+        # Process the selected field if not already processed
+        if selected_field not in st.session_state.processed_fields:
+            st.info(f"Processing field: {selected_field}...")
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                process_func = partial(process_single_column, 
+                                     total_records=len(df),
+                                     primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                     original_df=df)
+                future = executor.submit(process_func, df[selected_field], selected_field)
                 try:
                     insights = future.result()
-                    st.session_state.processed_fields[col] = insights
+                    st.session_state.processed_fields[selected_field] = insights
                 except Exception as e:
-                    st.error(f"Error processing column {col}: {str(e)}")
-    
-    # Calculate start and end indices for current batch
-    start_idx = st.session_state.current_batch * st.session_state.batch_size
-    end_idx = min(start_idx + st.session_state.batch_size, total_fields)
-    
-    # Display current batch
-    if start_idx < total_fields:
-        current_batch = all_fields[start_idx:end_idx]
+                    st.error(f"Error processing column {selected_field}: {str(e)}")
         
-        # Create a progress bar
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Display insights for current batch
-        for i, col in enumerate(current_batch):
-            # Calculate overall progress including previous batches
-            overall_progress = (start_idx + i + 1) / total_fields
-            progress_bar.progress(overall_progress)
-            status_text.text(f"Displaying column {start_idx + i + 1}/{total_fields}: {col}")
+        # Display insights for selected field
+        if selected_field in st.session_state.processed_fields:
+            insights = st.session_state.processed_fields[selected_field]
             
-            if col in st.session_state.processed_fields:
-                insights = st.session_state.processed_fields[col]
-                
-                # Display the insights for this column
-                st.markdown(f"### 🧬 {insights['column_name']}")
-                
-                if 'error' in insights:
-                    st.error(f"Error processing column: {insights['error']}")
-                    continue
-                
+            # Display the insights for this column
+            st.markdown(f"### 🧬 {insights['column_name']}")
+            
+            if 'error' in insights:
+                st.error(f"Error processing column: {insights['error']}")
+            else:
                 # Display coverage
                 if insights['text_content']:
                     st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
@@ -1194,10 +1200,10 @@ if df is not None:
                     
                     # Create datetime visualization UI
                     freq = st.selectbox(
-                        f"Choose trend resolution for `{col}`",
+                        f"Choose trend resolution for `{selected_field}`",
                         options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
                         index=0,
-                        key=f"freq_{col}"
+                        key=f"freq_{selected_field}"
                     )
                     
                     freq_map = {
@@ -1209,9 +1215,9 @@ if df is not None:
                     }
                     
                     show_all_dates = st.checkbox(
-                        f"Show all dates for `{col}`",
+                        f"Show all dates for `{selected_field}`",
                         value=False,
-                        key=f"show_all_{col}"
+                        key=f"show_all_{selected_field}"
                     )
                     
                     # Get the original index of non-null datetime values
@@ -1227,11 +1233,11 @@ if df is not None:
                         min_date = parsed_col.min().date()
                         max_date = parsed_col.max().date()
                         start_date, end_date = st.date_input(
-                            f"Select date range for `{col}`",
+                            f"Select date range for `{selected_field}`",
                             value=(min_date, max_date),
                             min_value=min_date,
                             max_value=max_date,
-                            key=f"range_{col}"
+                            key=f"range_{selected_field}"
                         )
                         
                         # Filter the datetime DataFrame using boolean indexing
@@ -1275,7 +1281,6 @@ if df is not None:
                             st.warning(f"Could not calculate unique primary keys: {str(e)}")
                     
                     st.line_chart(chart_df)
-                    continue
                 
                 # Display wordcloud if available
                 if 'wordcloud_text' in insights:
@@ -1293,22 +1298,22 @@ if df is not None:
                 # Display charts
                 for chart_type, chart_df in insights['charts']:
                     if chart_type == 'bar_chart':
-                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                        chart = create_bar_chart(chart_df, 'Occurrences', selected_field, "Top 10 Values (All Records)")
                         st.altair_chart(chart, use_container_width=True)
                     elif chart_type == 'bar_chart_pk':
-                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                        chart = create_bar_chart(chart_df, 'Occurrences', selected_field, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
                         st.markdown("#### Top Values (Per Primary Key)")
                         st.altair_chart(chart, use_container_width=True)
                     elif chart_type == 'donut_chart':
-                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                        fig = render_donut_chart(chart_df, 'Occurrences', selected_field, "Value Distribution (All Records)")
                         st.plotly_chart(fig, use_container_width=True)
                     elif chart_type == 'donut_chart_pk':
-                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                        fig = render_donut_chart(chart_df, 'Occurrences', selected_field, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
                         st.markdown("#### Value Distribution (Per Primary Key)")
                         st.plotly_chart(fig, use_container_width=True)
                     elif chart_type == 'histogram':
                         hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
-                            alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                            alt.X(f"{selected_field}:Q", bin=alt.Bin(maxbins=30), title=selected_field),
                             y=alt.Y('count()', title='Count')
                         ).properties(
                             width=600,
@@ -1328,61 +1333,262 @@ if df is not None:
                     elif table_type == 'Unique Values':
                         with st.expander("📋 View Unique Values (with counts)"):
                             st.dataframe(table_df, use_container_width=True)
-        
-        # Clear the progress bar and status text
-        progress_bar.empty()
-        status_text.empty()
-        
-        # Show progress
-        current_batch_size = len(current_batch)
-        st.info(f"Showing fields {start_idx + 1} to {end_idx} of {total_fields} (Batch {st.session_state.current_batch + 1} of {(total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size})")
-        
-        # Add navigation buttons with centered batch counter
-        st.markdown("---")  # Add a separator
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            if st.session_state.current_batch > 0:
-                if st.button("← Previous", use_container_width=True):
-                    st.session_state.current_batch -= 1
-                    st.rerun()
-            else:
-                st.button("← Previous", use_container_width=True, disabled=True)
-        with col2:
-            total_batches = (total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size
-            current_page = st.session_state.current_batch + 1
-            
-            # Create a container for the page navigation
-            with st.container():
-                # Add page number input with consistent height
-                new_page = st.number_input(
-                    "Page",
-                    min_value=1,
-                    max_value=total_batches,
-                    value=current_page,
-                    key="page_input",
-                    label_visibility="collapsed"
-                )
-                
-                # If page number changes, update the current batch
-                if new_page != current_page:
-                    st.session_state.current_batch = new_page - 1
-                    st.rerun()
-                
-                # Center the page counter text
-                st.markdown(
-                    f"<div style='text-align: center; padding: 0.5rem;'><strong>{new_page} of {total_batches}</strong></div>",
-                    unsafe_allow_html=True
-                )
-        with col3:
-            if end_idx < total_fields:
-                if st.button("Next →", use_container_width=True):
-                    st.session_state.current_batch += 1
-                    st.rerun()
-            else:
-                st.button("Next →", use_container_width=True, disabled=True)
-        st.markdown("---")  # Add a separator
     else:
-        st.success("✅ All fields have been processed!")
+        # Process all fields in parallel first
+        if not st.session_state.processed_fields:
+            st.info("Processing all fields... This may take a moment.")
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                # Create a partial function with the common arguments
+                process_func = partial(process_single_column, 
+                                     total_records=len(df),
+                                     primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                     original_df=df)
+                
+                # Submit all fields for processing
+                future_to_col = {
+                    executor.submit(process_func, df[col], col): col 
+                    for col in all_fields
+                }
+                
+                # Process results as they complete
+                for future in as_completed(future_to_col):
+                    col = future_to_col[future]
+                    try:
+                        insights = future.result()
+                        st.session_state.processed_fields[col] = insights
+                    except Exception as e:
+                        st.error(f"Error processing column {col}: {str(e)}")
+        
+        # Calculate start and end indices for current batch
+        start_idx = st.session_state.current_batch * st.session_state.batch_size
+        end_idx = min(start_idx + st.session_state.batch_size, total_fields)
+        
+        # Display current batch
+        if start_idx < total_fields:
+            current_batch = all_fields[start_idx:end_idx]
+            
+            # Create a progress bar
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Display insights for current batch
+            for i, col in enumerate(current_batch):
+                # Calculate overall progress including previous batches
+                overall_progress = (start_idx + i + 1) / total_fields
+                progress_bar.progress(overall_progress)
+                status_text.text(f"Displaying column {start_idx + i + 1}/{total_fields}: {col}")
+                
+                if col in st.session_state.processed_fields:
+                    insights = st.session_state.processed_fields[col]
+                    
+                    # Display the insights for this column
+                    st.markdown(f"### 🧬 {insights['column_name']}")
+                    
+                    if 'error' in insights:
+                        st.error(f"Error processing column: {insights['error']}")
+                        continue
+                    
+                    # Display coverage
+                    if insights['text_content']:
+                        st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
+                                  text=insights['text_content'][0])
+                    
+                    # Handle datetime columns
+                    if insights.get('is_datetime'):
+                        st.markdown("#### 📈 Trend (Date/Time Field)")
+                        parsed_col = insights['parsed_datetime']
+                        
+                        # Create datetime visualization UI
+                        freq = st.selectbox(
+                            f"Choose trend resolution for `{col}`",
+                            options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
+                            index=0,
+                            key=f"freq_{col}"
+                        )
+                        
+                        freq_map = {
+                            "Daily": "D",
+                            "Weekly": "W",
+                            "Monthly": "M",
+                            "Quarterly": "Q",
+                            "Yearly": "Y"
+                        }
+                        
+                        show_all_dates = st.checkbox(
+                            f"Show all dates for `{col}`",
+                            value=False,
+                            key=f"show_all_{col}"
+                        )
+                        
+                        # Get the original index of non-null datetime values
+                        valid_datetime_mask = parsed_col.notna()
+                        original_indices = parsed_col.index[valid_datetime_mask]
+                        
+                        # Create a DataFrame with the datetime column and original index
+                        datetime_df = pd.DataFrame({
+                            '__datetime__': parsed_col[valid_datetime_mask]
+                        }, index=original_indices)
+                        
+                        if not show_all_dates:
+                            min_date = parsed_col.min().date()
+                            max_date = parsed_col.max().date()
+                            start_date, end_date = st.date_input(
+                                f"Select date range for `{col}`",
+                                value=(min_date, max_date),
+                                min_value=min_date,
+                                max_value=max_date,
+                                key=f"range_{col}"
+                            )
+                            
+                            # Filter the datetime DataFrame using boolean indexing
+                            date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
+                                      (datetime_df['__datetime__'].dt.date <= end_date)
+                            filtered_df = datetime_df[date_mask].copy()
+                        else:
+                            filtered_df = datetime_df.copy()
+                        
+                        # Resample and count records
+                        resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
+                        record_counts = resampled.size().rename("Total Records")
+                        chart_df = pd.DataFrame(record_counts)
+                        
+                        if primary_keys:
+                            try:
+                                # Create a DataFrame with primary keys and datetime
+                                pk_datetime_df = pd.DataFrame({
+                                    '__datetime__': filtered_df['__datetime__']
+                                })
+                                
+                                # Add primary keys by using the current dataframe
+                                for pk in primary_keys:
+                                    if pk in df.columns:
+                                        # Get the values using the filtered indices
+                                        if isinstance(filtered_df.index, pd.MultiIndex):
+                                            # For multi-level index, get the first level
+                                            idx = filtered_df.index.get_level_values(0)
+                                        else:
+                                            idx = filtered_df.index
+                                        
+                                        # Use loc to get values by index
+                                        pk_values = df.loc[idx, pk].values
+                                        pk_datetime_df[pk] = pk_values
+                                
+                                # Drop duplicates based on primary keys and resample
+                                unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
+                                unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
+                                chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
+                            except Exception as e:
+                                st.warning(f"Could not calculate unique primary keys: {str(e)}")
+                        
+                        st.line_chart(chart_df)
+                        continue
+                    
+                    # Display wordcloud if available
+                    if 'wordcloud_text' in insights:
+                        st.markdown("#### ☁️ Word Cloud (Long Text Field)")
+                        try:
+                            wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
+                            fig, ax = plt.subplots(figsize=(10, 5))
+                            fig.patch.set_alpha(0)
+                            ax.imshow(wordcloud, interpolation='bilinear')
+                            ax.axis("off")
+                            st.pyplot(fig)
+                        except Exception as e:
+                            st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
+                    
+                    # Display charts
+                    for chart_type, chart_df in insights['charts']:
+                        if chart_type == 'bar_chart':
+                            chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                            st.altair_chart(chart, use_container_width=True)
+                        elif chart_type == 'bar_chart_pk':
+                            chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                            st.markdown("#### Top Values (Per Primary Key)")
+                            st.altair_chart(chart, use_container_width=True)
+                        elif chart_type == 'donut_chart':
+                            fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        elif chart_type == 'donut_chart_pk':
+                            fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                            st.markdown("#### Value Distribution (Per Primary Key)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        elif chart_type == 'histogram':
+                            hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                                alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                                y=alt.Y('count()', title='Count')
+                            ).properties(
+                                width=600,
+                                height=300,
+                                title="Distribution"
+                            )
+                            st.altair_chart(hist, use_container_width=True)
+                    
+                    # Display tables
+                    for table_type, table_df in insights['tables']:
+                        if table_type == 'value_counts':
+                            st.markdown("### 📊 Value Counts and Percentages")
+                            st.dataframe(table_df, use_container_width=True)
+                        elif table_type == 'value_counts_pk':
+                            st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                            st.dataframe(table_df, use_container_width=True)
+                        elif table_type == 'Unique Values':
+                            with st.expander("📋 View Unique Values (with counts)"):
+                                st.dataframe(table_df, use_container_width=True)
+            
+            # Clear the progress bar and status text
+            progress_bar.empty()
+            status_text.empty()
+            
+            # Show progress
+            current_batch_size = len(current_batch)
+            st.info(f"Showing fields {start_idx + 1} to {end_idx} of {total_fields} (Batch {st.session_state.current_batch + 1} of {(total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size})")
+            
+            # Add navigation buttons with centered batch counter
+            st.markdown("---")  # Add a separator
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                if st.session_state.current_batch > 0:
+                    if st.button("← Previous", use_container_width=True):
+                        st.session_state.current_batch -= 1
+                        st.rerun()
+                else:
+                    st.button("← Previous", use_container_width=True, disabled=True)
+            with col2:
+                total_batches = (total_fields + st.session_state.batch_size - 1) // st.session_state.batch_size
+                current_page = st.session_state.current_batch + 1
+                
+                # Create a container for the page navigation
+                with st.container():
+                    # Add page number input with consistent height
+                    new_page = st.number_input(
+                        "Page",
+                        min_value=1,
+                        max_value=total_batches,
+                        value=current_page,
+                        key="page_input",
+                        label_visibility="collapsed"
+                    )
+                    
+                    # If page number changes, update the current batch
+                    if new_page != current_page:
+                        st.session_state.current_batch = new_page - 1
+                        st.rerun()
+                    
+                    # Center the page counter text
+                    st.markdown(
+                        f"<div style='text-align: center; padding: 0.5rem;'><strong>{new_page} of {total_batches}</strong></div>",
+                        unsafe_allow_html=True
+                    )
+            with col3:
+                if end_idx < total_fields:
+                    if st.button("Next →", use_container_width=True):
+                        st.session_state.current_batch += 1
+                        st.rerun()
+                else:
+                    st.button("Next →", use_container_width=True, disabled=True)
+            st.markdown("---")  # Add a separator
+        else:
+            st.success("✅ All fields have been processed!")
 
     st.markdown("## Pattern Detection")
     st.markdown("""
