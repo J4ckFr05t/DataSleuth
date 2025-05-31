@@ -446,7 +446,7 @@ def delete_connection_details(connection_name):
         st.error(f"Error deleting connection details: {str(e)}")
         return False
 
-st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state="expanded", page_icon="static/favicon_io/favicon-32x32.png")
 
 # Dark mode style
 dark_style = """
@@ -583,11 +583,11 @@ if 'loading_complete' not in st.session_state:
 # Show loading screen if not complete
 if not st.session_state.loading_complete:
     loading_messages = [
-        "Initializing DataSleuth...",
-        "Loading analysis modules...",
-        "Preparing visualization engines...",
-        "Setting up data processing pipelines...",
-        "Ready to analyze your data!"
+        "[+] Initializing DataSleuth...",
+        "[+] Loading analysis modules...",
+        "[+] Preparing visualization engines...",
+        "[+] Setting up data processing pipelines...",
+        "[+] Ready to analyze your data!"
     ]
     
     # Create terminal container
@@ -620,7 +620,7 @@ if not st.session_state.loading_complete:
     st.session_state.loading_complete = True
     st.rerun()
 
-st.title("📊 DataSleuth - Smart EDA Viewer")
+#st.title("📊 DataSleuth - Smart EDA Viewer")
 
 st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
@@ -787,6 +787,9 @@ with st.expander("📊 Database Connection Options", expanded=False):
             st.warning("⚠️ No saved connections found. Please save a connection first.")
 
 # --- Dynamic Table of Contents ---
+# Add logo above TOC
+st.sidebar.image("static/logo.png", use_container_width=True, width=150)
+
 toc = """
 # Table of Contents
 - [Load Previous Session](#load-previous-session)
