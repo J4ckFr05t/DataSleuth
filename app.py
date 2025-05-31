@@ -799,9 +799,11 @@ toc = """
 - [Primary Key Identification](#primary-key-identification)
 - [Per Field Insights](#per-field-insights)
 - [Pattern Detection](#pattern-detection)
+- [Outlier Detection](#outlier-detection)
+- [Advanced Outlier Detection](#advanced-outlier-detection)
 """
 
-# Only add Country/Region Extraction Insights to TOC if sidebar is visible
+# Add Country/Region Extraction Insights to TOC if sidebar is visible
 if st.session_state.get('sidebar_visible', True):
     toc += "\n- [Country/Region/Compliance/Business Unit Extraction Insights](#country-region-compliance-business-unit-extraction-insights)"
 
@@ -1831,6 +1833,458 @@ if df is not None:
                 st.download_button("📄 Download HTML", data=html, file_name="all_patterns.html", mime="text/html")
             else:
                 st.info("No patterns to export.")
+
+    st.markdown("## Outlier Detection")
+    st.markdown("""
+    This section helps identify outliers in your numerical data using two methods:
+    1. **Z-score**: Identifies values that deviate more than 3 standard deviations from the mean
+    2. **IQR (Interquartile Range)**: Identifies values outside the range [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+    
+    Outliers can indicate:
+    - Data entry errors
+    - Measurement errors
+    - Natural variation
+    - Special cases that need attention
+    """)
+
+    # Initialize session state for outlier detection
+    if 'outlier_detection_run' not in st.session_state:
+        st.session_state.outlier_detection_run = False
+
+    if st.button("Run Outlier Detection"):
+        st.session_state.outlier_detection_run = True
+        st.rerun()
+
+    if st.session_state.outlier_detection_run:
+        # Get numerical columns
+        numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        
+        if not numerical_cols:
+            st.warning("⚠️ No numerical columns found for outlier detection.")
+        else:
+            # Create progress bar for outlier detection
+            outlier_progress = st.progress(0)
+            outlier_status = st.empty()
+
+            # Process outliers in parallel
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                outlier_futures = {}
+                for col in numerical_cols:
+                    # Skip columns with too many nulls or all same values
+                    if df[col].nunique() <= 1 or df[col].isnull().mean() > 0.5:
+                        continue
+                    
+                    # Calculate Z-score and IQR outliers
+                    z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+                    q1 = df[col].quantile(0.25)
+                    q3 = df[col].quantile(0.75)
+                    iqr = q3 - q1
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    
+                    # Get outlier indices
+                    z_score_outliers = df[z_scores > 3].index
+                    iqr_outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)].index
+                    
+                    # Create outlier summary
+                    outlier_summary = {
+                        'Column': col,
+                        'Total Values': len(df[col]),
+                        'Z-score Outliers': len(z_score_outliers),
+                        'IQR Outliers': len(iqr_outliers),
+                        'Z-score Outlier %': round(len(z_score_outliers) / len(df[col]) * 100, 2),
+                        'IQR Outlier %': round(len(iqr_outliers) / len(df[col]) * 100, 2),
+                        'Min Value': df[col].min(),
+                        'Max Value': df[col].max(),
+                        'Mean': df[col].mean(),
+                        'Std Dev': df[col].std(),
+                        'Q1': q1,
+                        'Q3': q3,
+                        'IQR': iqr
+                    }
+                    
+                    outlier_futures[col] = outlier_summary
+
+            # Create summary DataFrame
+            outlier_summary_df = pd.DataFrame(list(outlier_futures.values()))
+            
+            # Display summary
+            st.markdown("### 📊 Outlier Summary by Column")
+            st.dataframe(outlier_summary_df, use_container_width=True)
+
+            # Allow user to select a column for detailed analysis
+            selected_col = st.selectbox(
+                "Select a column for detailed outlier analysis",
+                options=numerical_cols,
+                key="outlier_column_selector"
+            )
+
+            if selected_col:
+                # Calculate statistics for selected column
+                z_scores = np.abs((df[selected_col] - df[selected_col].mean()) / df[selected_col].std())
+                q1 = df[selected_col].quantile(0.25)
+                q3 = df[selected_col].quantile(0.75)
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+
+                # Get outlier data
+                z_score_outliers = df[z_scores > 3]
+                iqr_outliers = df[(df[selected_col] < lower_bound) | (df[selected_col] > upper_bound)]
+
+                # Create visualizations
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### 📈 Distribution Plot with Z-score Outliers")
+                    fig = go.Figure()
+                    
+                    # Add histogram
+                    fig.add_trace(go.Histogram(
+                        x=df[selected_col],
+                        name='Distribution',
+                        nbinsx=50,
+                        opacity=0.7
+                    ))
+                    
+                    # Add outlier points
+                    fig.add_trace(go.Scatter(
+                        x=z_score_outliers[selected_col],
+                        y=[0] * len(z_score_outliers),
+                        mode='markers',
+                        name='Z-score Outliers',
+                        marker=dict(
+                            color='red',
+                            size=8,
+                            symbol='x'
+                        )
+                    ))
+                    
+                    fig.update_layout(
+                        title=f'Distribution of {selected_col} with Z-score Outliers',
+                        xaxis_title=selected_col,
+                        yaxis_title='Count',
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col2:
+                    st.markdown("#### 📊 Box Plot with IQR Outliers")
+                    fig = go.Figure()
+                    
+                    fig.add_trace(go.Box(
+                        y=df[selected_col],
+                        name=selected_col,
+                        boxpoints='outliers',
+                        marker=dict(
+                            color='red',
+                            size=8
+                        )
+                    ))
+                    
+                    fig.update_layout(
+                        title=f'Box Plot of {selected_col}',
+                        yaxis_title=selected_col,
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # Display outlier details
+                st.markdown("#### 📋 Outlier Details")
+                
+                # Z-score outliers
+                st.markdown("##### Z-score Outliers (|z| > 3)")
+                if not z_score_outliers.empty:
+                    st.dataframe(z_score_outliers[[selected_col]], use_container_width=True)
+                else:
+                    st.info("No Z-score outliers found.")
+
+                # IQR outliers
+                st.markdown("##### IQR Outliers")
+                if not iqr_outliers.empty:
+                    st.dataframe(iqr_outliers[[selected_col]], use_container_width=True)
+                else:
+                    st.info("No IQR outliers found.")
+
+                # Export options
+                with st.expander("📤 Export Outlier Results"):
+                    if not z_score_outliers.empty or not iqr_outliers.empty:
+                        # Combine both types of outliers
+                        all_outliers = pd.concat([
+                            z_score_outliers[[selected_col]].assign(Method='Z-score'),
+                            iqr_outliers[[selected_col]].assign(Method='IQR')
+                        ])
+                        
+                        csv = all_outliers.to_csv(index=False).encode()
+                        st.download_button(
+                            "📄 Download Outliers as CSV",
+                            data=csv,
+                            file_name=f"{selected_col}_outliers.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No outliers to export.")
+
+    st.markdown("## Advanced Outlier Detection")
+    st.markdown("""
+    This section provides advanced outlier detection methods:
+    1. **Isolation Forest**: Detects outliers by isolating observations in random forests
+    2. **Local Outlier Factor (LOF)**: Identifies outliers based on local density deviation
+    3. **DBSCAN**: Density-based clustering that can identify outliers as noise points
+    4. **k-Means**: Identifies outliers as points far from cluster centers
+    
+    These methods are particularly useful for:
+    - Multivariate outlier detection
+    - Complex patterns and relationships
+    - Non-linear data distributions
+    """)
+
+    # Initialize session state for advanced outlier detection
+    if 'advanced_outlier_detection_run' not in st.session_state:
+        st.session_state.advanced_outlier_detection_run = False
+
+    if st.button("Run Advanced Outlier Detection"):
+        st.session_state.advanced_outlier_detection_run = True
+        st.rerun()
+
+    if st.session_state.advanced_outlier_detection_run:
+        # Get numerical columns
+        numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        
+        if len(numerical_cols) < 2:
+            st.warning("⚠️ Need at least 2 numerical columns for advanced outlier detection.")
+        else:
+            # Allow user to select columns for analysis
+            selected_cols = st.multiselect(
+                "Select columns for advanced outlier detection (choose 2 or more)",
+                options=numerical_cols,
+                default=numerical_cols[:min(5, len(numerical_cols))],
+                key="advanced_outlier_columns"
+            )
+
+            if len(selected_cols) >= 2:
+                # Prepare data
+                X = df[selected_cols].dropna()
+                
+                if len(X) == 0:
+                    st.error("No valid data points after removing null values.")
+                else:
+                    # Create progress bar
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
+                    # Initialize results dictionary
+                    results = {}
+
+                    # 1. Isolation Forest
+                    status_text.text("Running Isolation Forest...")
+                    from sklearn.ensemble import IsolationForest
+                    iso_forest = IsolationForest(contamination=0.1, random_state=42)
+                    iso_scores = iso_forest.fit_predict(X)
+                    results['Isolation Forest'] = {
+                        'scores': iso_scores,
+                        'outliers': X[iso_scores == -1]
+                    }
+                    progress_bar.progress(25)
+
+                    # 2. Local Outlier Factor
+                    status_text.text("Running Local Outlier Factor...")
+                    from sklearn.neighbors import LocalOutlierFactor
+                    lof = LocalOutlierFactor(contamination=0.1)
+                    lof_scores = lof.fit_predict(X)
+                    results['Local Outlier Factor'] = {
+                        'scores': lof_scores,
+                        'outliers': X[lof_scores == -1]
+                    }
+                    progress_bar.progress(50)
+
+                    # 3. DBSCAN
+                    status_text.text("Running DBSCAN...")
+                    from sklearn.cluster import DBSCAN
+                    from sklearn.preprocessing import StandardScaler
+                    # Scale the data for DBSCAN
+                    scaler = StandardScaler()
+                    X_scaled = scaler.fit_transform(X)
+                    dbscan = DBSCAN(eps=0.5, min_samples=5)
+                    dbscan_labels = dbscan.fit_predict(X_scaled)
+                    results['DBSCAN'] = {
+                        'scores': dbscan_labels,
+                        'outliers': X[dbscan_labels == -1]
+                    }
+                    progress_bar.progress(75)
+
+                    # 4. k-Means
+                    status_text.text("Running k-Means...")
+                    from sklearn.cluster import KMeans
+                    from sklearn.metrics import silhouette_score
+                    
+                    # Find optimal k using silhouette score
+                    silhouette_scores = []
+                    K = range(2, min(11, len(X)))
+                    for k in K:
+                        kmeans = KMeans(n_clusters=k, random_state=42)
+                        labels = kmeans.fit_predict(X_scaled)
+                        if len(np.unique(labels)) > 1:  # Ensure we have at least 2 clusters
+                            score = silhouette_score(X_scaled, labels)
+                            silhouette_scores.append(score)
+                    
+                    optimal_k = K[np.argmax(silhouette_scores)] if silhouette_scores else 3
+                    
+                    # Run k-means with optimal k
+                    kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+                    kmeans_labels = kmeans.fit_predict(X_scaled)
+                    
+                    # Calculate distances to cluster centers
+                    distances = np.min(kmeans.transform(X_scaled), axis=1)
+                    threshold = np.percentile(distances, 90)  # Mark top 10% as outliers
+                    kmeans_outliers = distances > threshold
+                    
+                    results['k-Means'] = {
+                        'scores': kmeans_labels,
+                        'outliers': X[kmeans_outliers]
+                    }
+                    progress_bar.progress(100)
+
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
+
+                    # Display results
+                    st.markdown("### 📊 Outlier Detection Results")
+
+                    # Create summary table
+                    summary_data = []
+                    for method, result in results.items():
+                        n_outliers = len(result['outliers'])
+                        summary_data.append({
+                            'Method': method,
+                            'Outliers Found': n_outliers,
+                            'Outlier Percentage': f"{(n_outliers / len(X) * 100):.2f}%"
+                        })
+                    
+                    summary_df = pd.DataFrame(summary_data)
+                    st.dataframe(summary_df, use_container_width=True)
+
+                    # Visualize results
+                    st.markdown("### 📈 Visualization")
+                    
+                    # Select visualization method
+                    viz_method = st.selectbox(
+                        "Choose visualization method",
+                        ["2D Scatter Plot", "3D Scatter Plot"],
+                        key="viz_method"
+                    )
+
+                    if viz_method == "2D Scatter Plot":
+                        # Select columns for 2D plot
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            x_col = st.selectbox("Select X-axis", selected_cols, index=0)
+                        with col2:
+                            y_col = st.selectbox("Select Y-axis", selected_cols, index=1)
+
+                        # Create plot for each method
+                        for method, result in results.items():
+                            fig = go.Figure()
+                            
+                            # Plot normal points
+                            normal_points = X[result['scores'] != -1]
+                            fig.add_trace(go.Scatter(
+                                x=normal_points[x_col],
+                                y=normal_points[y_col],
+                                mode='markers',
+                                name='Normal',
+                                marker=dict(color='blue', size=8)
+                            ))
+                            
+                            # Plot outliers
+                            outliers = result['outliers']
+                            fig.add_trace(go.Scatter(
+                                x=outliers[x_col],
+                                y=outliers[y_col],
+                                mode='markers',
+                                name='Outlier',
+                                marker=dict(color='red', size=10, symbol='x')
+                            ))
+                            
+                            fig.update_layout(
+                                title=f'{method} Outlier Detection',
+                                xaxis_title=x_col,
+                                yaxis_title=y_col,
+                                showlegend=True
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+
+                    else:  # 3D Scatter Plot
+                        # Select columns for 3D plot
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            x_col = st.selectbox("Select X-axis", selected_cols, index=0)
+                        with col2:
+                            y_col = st.selectbox("Select Y-axis", selected_cols, index=1)
+                        with col3:
+                            z_col = st.selectbox("Select Z-axis", selected_cols, index=2)
+
+                        # Create plot for each method
+                        for method, result in results.items():
+                            fig = go.Figure()
+                            
+                            # Plot normal points
+                            normal_points = X[result['scores'] != -1]
+                            fig.add_trace(go.Scatter3d(
+                                x=normal_points[x_col],
+                                y=normal_points[y_col],
+                                z=normal_points[z_col],
+                                mode='markers',
+                                name='Normal',
+                                marker=dict(color='blue', size=5)
+                            ))
+                            
+                            # Plot outliers
+                            outliers = result['outliers']
+                            fig.add_trace(go.Scatter3d(
+                                x=outliers[x_col],
+                                y=outliers[y_col],
+                                z=outliers[z_col],
+                                mode='markers',
+                                name='Outlier',
+                                marker=dict(color='red', size=8, symbol='x')
+                            ))
+                            
+                            fig.update_layout(
+                                title=f'{method} Outlier Detection',
+                                scene=dict(
+                                    xaxis_title=x_col,
+                                    yaxis_title=y_col,
+                                    zaxis_title=z_col
+                                ),
+                                showlegend=True
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+
+                    # Export results
+                    with st.expander("📤 Export Results"):
+                        # Combine all outlier results
+                        all_outliers = pd.DataFrame()
+                        for method, result in results.items():
+                            outliers = result['outliers'].copy()
+                            outliers['Method'] = method
+                            all_outliers = pd.concat([all_outliers, outliers])
+                        
+                        if not all_outliers.empty:
+                            csv = all_outliers.to_csv(index=False).encode()
+                            st.download_button(
+                                "📄 Download All Outliers as CSV",
+                                data=csv,
+                                file_name="advanced_outliers.csv",
+                                mime="text/csv"
+                            )
+                        else:
+                            st.info("No outliers found to export.")
 
     if sidebar_visible:
         st.markdown("## Country/Region/Compliance/Business Unit Extraction Insights")
