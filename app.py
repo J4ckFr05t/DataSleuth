@@ -1496,31 +1496,6 @@ if df is not None:
                         with st.expander("📋 View Unique Values (with counts)"):
                             st.dataframe(table_df, use_container_width=True)
     else:
-        # Process all fields in parallel first
-        if not st.session_state.processed_fields:
-            st.info("Processing all fields... This may take a moment.")
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                # Create a partial function with the common arguments
-                process_func = partial(process_single_column, 
-                                     total_records=len(df),
-                                     primary_keys=primary_keys if 'primary_keys' in locals() else None,
-                                     original_df=df)
-                
-                # Submit all fields for processing
-                future_to_col = {
-                    executor.submit(process_func, df[col], col): col 
-                    for col in all_fields
-                }
-                
-                # Process results as they complete
-                for future in as_completed(future_to_col):
-                    col = future_to_col[future]
-                    try:
-                        insights = future.result()
-                        st.session_state.processed_fields[col] = insights
-                    except Exception as e:
-                        st.error(f"Error processing column {col}: {str(e)}")
-        
         # Calculate start and end indices for current batch
         start_idx = st.session_state.current_batch * st.session_state.batch_size
         end_idx = min(start_idx + st.session_state.batch_size, total_fields)
@@ -1532,6 +1507,32 @@ if df is not None:
             # Create a progress bar
             progress_bar = st.progress(0)
             status_text = st.empty()
+            
+            # Process only the current batch of fields if not already processed
+            fields_to_process = [col for col in current_batch if col not in st.session_state.processed_fields]
+            if fields_to_process:
+                st.info(f"Processing {len(fields_to_process)} fields in current batch...")
+                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                    # Create a partial function with the common arguments
+                    process_func = partial(process_single_column, 
+                                         total_records=len(df),
+                                         primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                         original_df=df)
+                    
+                    # Submit only the fields that need processing
+                    future_to_col = {
+                        executor.submit(process_func, df[col], col): col 
+                        for col in fields_to_process
+                    }
+                    
+                    # Process results as they complete
+                    for future in as_completed(future_to_col):
+                        col = future_to_col[future]
+                        try:
+                            insights = future.result()
+                            st.session_state.processed_fields[col] = insights
+                        except Exception as e:
+                            st.error(f"Error processing column {col}: {str(e)}")
             
             # Display insights for current batch
             for i, col in enumerate(current_batch):
