@@ -622,6 +622,7 @@ if not st.session_state.loading_complete:
 
 #st.title("📊 DataSleuth - Smart EDA Viewer")
 
+st.info("ℹ️ To load new data, please refresh the page first to clear the current session.")
 st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
@@ -810,6 +811,9 @@ if st.session_state.get('sidebar_visible', True):
 # Append custom categories to the TOC if present
 if "custom_categories" in st.session_state and st.session_state.custom_categories:
     toc += "\n- [Custom Extraction Insights](#custom-extraction-insights)"
+
+# Add Save Session to TOC
+toc += "\n- [Save Session](#save-session)"
 
 st.sidebar.markdown(toc)
 
@@ -2632,3 +2636,36 @@ if 'analysis_start_time' in st.session_state:
     else:
         time_str = f"{seconds:.2f} seconds"
     st.success(f"⏱️ Total Analysis Time: {time_str}")
+
+st.markdown("## Save Session")
+if st.button("💾 Save Session", key="save_session_button"):
+    if 'df' in locals() and df is not None:
+        session_data = {
+            "dataframe": df,
+            "primary_keys": primary_keys if 'primary_keys' in locals() else None,
+            "countries_input": st.session_state.get('countries_input', ""),
+            "regions_input": st.session_state.get('regions_input', ""),
+            "compliance_input": st.session_state.get('compliance_input', ""),
+            "business_unit_input": st.session_state.get('business_unit_input', ""),
+            "custom_categories": {
+                cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
+            }
+        }
+
+        # Prepare save directory
+        save_dir = "EDA_Reports"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Build filename: <original_filename>_<timestamp>.pkl
+        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_filename = f"{original_filename}_{timestamp}.pkl"
+        save_path = os.path.join(save_dir, full_filename)
+
+        # Save to file
+        with open(save_path, "wb") as f:
+            pickle.dump(session_data, f)
+
+        st.success(f"✅ Session saved to `{save_path}`")
+    else:
+        st.warning("⚠️ No dataframe available to save.")
