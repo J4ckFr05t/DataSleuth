@@ -1912,6 +1912,57 @@ if df is not None:
             st.markdown("### 📊 Outlier Summary by Column")
             st.dataframe(outlier_summary_df, use_container_width=True)
 
+            # Add insights section for basic outlier detection
+            st.markdown("### 💡 Insights")
+            
+            # Calculate overall statistics
+            total_outliers_z = outlier_summary_df['Z-score Outliers'].sum()
+            total_outliers_iqr = outlier_summary_df['IQR Outliers'].sum()
+            total_values = outlier_summary_df['Total Values'].sum()
+            
+            # Generate insights
+            insights = []
+            
+            # Overall outlier percentage
+            z_score_percentage = (total_outliers_z / total_values) * 100
+            iqr_percentage = (total_outliers_iqr / total_values) * 100
+            
+            insights.append(f"📈 **Overall Outlier Analysis:**")
+            insights.append(f"- Z-score method identified {total_outliers_z} outliers ({z_score_percentage:.2f}% of data)")
+            insights.append(f"- IQR method identified {total_outliers_iqr} outliers ({iqr_percentage:.2f}% of data)")
+            
+            # Compare methods
+            if abs(z_score_percentage - iqr_percentage) > 5:
+                insights.append(f"\n⚠️ **Method Comparison:**")
+                insights.append(f"- There's a significant difference between Z-score and IQR methods")
+                insights.append(f"- This suggests your data might not be normally distributed")
+                insights.append(f"- Consider using the IQR method for more reliable results")
+            
+            # Column-specific insights
+            insights.append(f"\n🔍 **Column-specific Insights:**")
+            for _, row in outlier_summary_df.iterrows():
+                col_name = row['Column']
+                z_outliers = row['Z-score Outliers']
+                iqr_outliers = row['IQR Outliers']
+                z_percent = row['Z-score Outlier %']
+                iqr_percent = row['IQR Outlier %']
+                
+                if z_outliers > 0 or iqr_outliers > 0:
+                    insights.append(f"\n**{col_name}:**")
+                    if z_outliers > 0:
+                        insights.append(f"- Has {z_outliers} Z-score outliers ({z_percent:.2f}%)")
+                    if iqr_outliers > 0:
+                        insights.append(f"- Has {iqr_outliers} IQR outliers ({iqr_percent:.2f}%)")
+                    
+                    # Add specific insights based on the data
+                    if row['Std Dev'] > row['Mean']:
+                        insights.append(f"- High variability: Standard deviation ({row['Std Dev']:.2f}) is greater than mean ({row['Mean']:.2f})")
+                    if row['IQR'] > row['Mean']:
+                        insights.append(f"- Wide spread: IQR ({row['IQR']:.2f}) is greater than mean ({row['Mean']:.2f})")
+            
+            # Display insights
+            st.markdown("\n".join(insights))
+
             # Allow user to select a column for detailed analysis
             selected_col = st.selectbox(
                 "Select a column for detailed outlier analysis",
@@ -2166,6 +2217,76 @@ if df is not None:
                     
                     summary_df = pd.DataFrame(summary_data)
                     st.dataframe(summary_df, use_container_width=True)
+
+                    # Add insights section for advanced outlier detection
+                    st.markdown("### 💡 Advanced Outlier Detection Insights")
+                    
+                    # Calculate overall statistics
+                    total_outliers = sum(len(result['outliers']) for result in results.values())
+                    total_points = len(X)
+                    
+                    # Generate insights
+                    advanced_insights = []
+                    
+                    # Overall analysis
+                    advanced_insights.append(f"📈 **Overall Analysis:**")
+                    advanced_insights.append(f"- Total outliers detected: {total_outliers} ({total_outliers/total_points*100:.2f}% of data)")
+                    
+                    # Method comparison
+                    advanced_insights.append(f"\n🔍 **Method Comparison:**")
+                    method_counts = {method: len(result['outliers']) for method, result in results.items()}
+                    max_method = max(method_counts.items(), key=lambda x: x[1])
+                    min_method = min(method_counts.items(), key=lambda x: x[1])
+                    
+                    advanced_insights.append(f"- {max_method[0]} detected the most outliers ({max_method[1]})")
+                    advanced_insights.append(f"- {min_method[0]} detected the least outliers ({min_method[1]})")
+                    
+                    # Consistency analysis
+                    common_outliers = set()
+                    for method, result in results.items():
+                        if len(common_outliers) == 0:
+                            common_outliers = set(result['outliers'].index)
+                        else:
+                            common_outliers &= set(result['outliers'].index)
+                    
+                    if len(common_outliers) > 0:
+                        advanced_insights.append(f"\n✅ **High Confidence Outliers:**")
+                        advanced_insights.append(f"- {len(common_outliers)} outliers were detected by all methods")
+                        advanced_insights.append(f"- These are high-confidence outliers that should be investigated")
+                    
+                    # Method-specific insights
+                    advanced_insights.append(f"\n📊 **Method-specific Insights:**")
+                    for method, result in results.items():
+                        n_outliers = len(result['outliers'])
+                        if n_outliers > 0:
+                            advanced_insights.append(f"\n**{method}:**")
+                            advanced_insights.append(f"- Detected {n_outliers} outliers ({n_outliers/total_points*100:.2f}%)")
+                            
+                            # Add method-specific insights
+                            if method == 'Isolation Forest':
+                                advanced_insights.append(f"- Good for detecting global outliers in high-dimensional data")
+                            elif method == 'Local Outlier Factor':
+                                advanced_insights.append(f"- Effective at finding local outliers in clusters")
+                            elif method == 'DBSCAN':
+                                advanced_insights.append(f"- Identifies outliers as points that don't belong to any cluster")
+                            elif method == 'k-Means':
+                                advanced_insights.append(f"- Finds outliers as points far from cluster centers")
+                    
+                    # Recommendations
+                    advanced_insights.append(f"\n💡 **Recommendations:**")
+                    if total_outliers/total_points > 0.1:
+                        advanced_insights.append(f"- High number of outliers detected. Consider:")
+                        advanced_insights.append(f"  1. Checking for data quality issues")
+                        advanced_insights.append(f"  2. Investigating the nature of these outliers")
+                        advanced_insights.append(f"  3. Reviewing data collection methods")
+                    else:
+                        advanced_insights.append(f"- Moderate number of outliers detected. Consider:")
+                        advanced_insights.append(f"  1. Reviewing the identified outliers")
+                        advanced_insights.append(f"  2. Understanding their business context")
+                        advanced_insights.append(f"  3. Deciding whether to keep or remove them")
+                    
+                    # Display insights
+                    st.markdown("\n".join(advanced_insights))
 
                     # Visualize results
                     st.markdown("### 📈 Visualization")
