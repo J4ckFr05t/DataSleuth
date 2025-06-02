@@ -451,8 +451,8 @@ st.set_page_config(page_title="DataSleuth", layout="wide", initial_sidebar_state
 # Dark mode style
 dark_style = """
 <style>
-/* Terminal-like loading screen styles */
-.terminal-container {
+/* Cool wave animation loader styles */
+.spinner-container {
     position: fixed;
     top: 0;
     left: 0;
@@ -465,88 +465,79 @@ dark_style = """
     align-items: center;
 }
 
-.terminal {
-    width: 800px;
-    height: 400px;
-    background-color: #1a1a1a;
-    border: 2px solid #333;
-    border-radius: 8px;
-    padding: 20px;
-    font-family: 'Courier New', monospace;
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+.loader {
+    transform: rotateZ(45deg);
+    perspective: 1000px;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    color: #6ae285;  /* Using our green color */
 }
 
-.terminal::before {
+.loader:before,
+.loader:after {
     content: '';
+    display: block;
     position: absolute;
     top: 0;
     left: 0;
-    right: 0;
-    height: 30px;
-    background: #333;
-    border-radius: 6px 6px 0 0;
-    z-index: 1;
-}
-
-.terminal::after {
-    content: '';
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    width: 12px;
-    height: 12px;
-    background: #ff5f56;
+    width: inherit;
+    height: inherit;
     border-radius: 50%;
-    box-shadow: 20px 0 0 #ffbd2e, 40px 0 0 #27c93f;
-    z-index: 2;
+    transform: rotateX(70deg);
+    animation: 1s spin linear infinite;
 }
 
-.terminal-header {
-    color: #888;
-    border-bottom: 1px solid #333;
-    padding: 35px 0 10px 0;
-    margin-bottom: 20px;
-    font-size: 0.9em;
-    position: relative;
-    z-index: 1;
+.loader:after {
+    color: #54b6ed;  /* Using our blue color */
+    transform: rotateY(70deg);
+    animation-delay: .4s;
 }
 
-.terminal-content {
-    position: relative;
-    height: calc(100% - 40px);
-    z-index: 1;
-}
-
-.terminal-line {
-    color: #00ff00;
-    margin: 5px 0;
-    opacity: 0;
-    transform: translateY(10px);
-    animation: terminalFadeIn 0.5s ease forwards;
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
-}
-
-.terminal-cursor {
-    display: inline-block;
-    width: 8px;
-    height: 15px;
-    background-color: #00ff00;
-    margin-left: 5px;
-    animation: blink 1s infinite;
-    box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
-}
-
-@keyframes terminalFadeIn {
-    to {
-        opacity: 1;
-        transform: translateY(0);
+@keyframes rotate {
+    0% {
+        transform: translate(-50%, -50%) rotateZ(0deg);
+    }
+    100% {
+        transform: translate(-50%, -50%) rotateZ(360deg);
     }
 }
 
-@keyframes blink {
-    50% { opacity: 0; }
+@keyframes rotateccw {
+    0% {
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+    100% {
+        transform: translate(-50%, -50%) rotate(-360deg);
+    }
+}
+
+@keyframes spin {
+    0%,
+    100% {
+        box-shadow: .2em 0px 0 0px currentcolor;
+    }
+    12% {
+        box-shadow: .2em .2em 0 0 currentcolor;
+    }
+    25% {
+        box-shadow: 0 .2em 0 0px currentcolor;
+    }
+    37% {
+        box-shadow: -.2em .2em 0 0 currentcolor;
+    }
+    50% {
+        box-shadow: -.2em 0 0 0 currentcolor;
+    }
+    62% {
+        box-shadow: -.2em -.2em 0 0 currentcolor;
+    }
+    75% {
+        box-shadow: 0px -.2em 0 0 currentcolor;
+    }
+    87% {
+        box-shadow: .2em -.2em 0 0 currentcolor;
+    }
 }
 
 /* Theme-aware variables */
@@ -582,44 +573,21 @@ if 'loading_complete' not in st.session_state:
 
 # Show loading screen if not complete
 if not st.session_state.loading_complete:
-    loading_messages = [
-        "[+] Initializing DataSleuth...",
-        "[+] Loading analysis modules...",
-        "[+] Preparing visualization engines...",
-        "[+] Setting up data processing pipelines...",
-        "[+] Ready to analyze your data!"
-    ]
-    
-    # Create terminal container
-    terminal_html = """
-    <div class="terminal-container">
-        <div class="terminal">
-            <div class="terminal-header">
-                DataSleuth Terminal v1.0.0
-            </div>
-            <div class="terminal-content">
-    """
-    
-    # Add each message with shorter delay
-    for i, message in enumerate(loading_messages):
-        delay = i * 0.5  # Reduced from 1.5 to 0.5 seconds between each message
-        terminal_html += f'<div class="terminal-line" style="animation-delay: {delay}s">{message}<span class="terminal-cursor"></span></div>'
-    
-    terminal_html += """
-            </div>
-        </div>
+    # Create spinner container
+    spinner_html = """
+    <div class="spinner-container">
+        <div class="loader"></div>
     </div>
     """
     
-    st.markdown(terminal_html, unsafe_allow_html=True)
+    st.markdown(spinner_html, unsafe_allow_html=True)
     
-    # Wait for all messages to complete with shorter buffer
-    time.sleep(len(loading_messages) * 0.5 + 0.5)  # Reduced from 1.5 to 0.5 seconds per message, and buffer from 1 to 0.5
+    # Wait for a short duration
+    time.sleep(1.5)
     
     # Mark loading as complete
     st.session_state.loading_complete = True
     st.rerun()
-
 #st.title("📊 DataSleuth - Smart EDA Viewer")
 
 st.info("ℹ️ To load new data, please refresh the page first to clear the current session.")
@@ -2637,3 +2605,5 @@ if st.button("💾 Save Session", key="save_session_button"):
         st.success(f"✅ Session saved to `{save_path}`")
     else:
         st.warning("⚠️ No dataframe available to save.")
+
+
