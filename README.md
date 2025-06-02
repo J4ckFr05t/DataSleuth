@@ -1,20 +1,50 @@
-# 📊 DataSleuth – Smart EDA Viewer
+# DataSleuth – Smart EDA Viewer
 
-DataSleuth is a powerful, interactive Streamlit-based application for performing intelligent Exploratory Data Analysis (EDA) on CSV and Excel datasets. It supports primary key detection, field-wise summaries, trend analysis, pattern recognition, keyword extraction, and more.
+<div align="center">
+  <img src="static/logo.png" alt="DataSleuth Logo" width="200"/>
+</div>
+
+DataSleuth is a powerful, interactive Streamlit-based application for performing intelligent Exploratory Data Analysis (EDA) on CSV, Excel, JSON, and XML datasets. It supports advanced data analysis, visualization, and pattern detection capabilities.
 
 ---
 
 ## 🚀 Features
 
-- 📂 Load sessions and upload CSV/XLSX files  
-- 🧾 Field summaries with null/unique insights  
-- 🔎 Primary key detection and validation  
-- 📈 Trend charts for date/datetime fields  
-- ☁️ Word clouds and value distribution visualizations  
-- 🌍 Country/Region and custom keyword extraction  
-- 🔍 Pattern detection with symbolic abstraction  
-- 💾 Save and restore session states  
-- ✅ Dynamic filtering and sidebar controls
+- 📂 Multi-format Support
+  - CSV, Excel, JSON, and XML file upload
+  - Database connection support (Spark Thrift Server)
+  - Session state management
+
+- 🔍 Advanced Data Analysis
+  - Primary key detection and validation
+  - Field-wise summaries with null/unique insights
+  - Pattern detection with symbolic abstraction
+  - Outlier detection using multiple algorithms (Z-score, IQR, Isolation Forest, DBSCAN, k-Means)
+  - Advanced multi-dimensional outlier analysis
+
+- 📊 Visualization Capabilities
+  - Trend charts for date/datetime fields
+  - Word clouds for text fields
+  - Value distribution visualizations
+  - Interactive data filtering and exploration
+
+- 🌍 Smart Extraction Features
+  - Country and region detection
+  - Business unit identification
+  - Compliance term extraction
+  - Custom keyword extraction
+
+- ⚙️ Performance Optimizations
+  - Parallel processing for large datasets
+  - Batch processing for field analysis
+  - Progress tracking and status updates
+  - Memory-efficient data handling
+
+- 🛠️ User Experience
+  - Dynamic filtering and sidebar controls
+  - Paginated field analysis
+  - Field-specific detailed views
+  - Save and restore session states
 
 ---
 
@@ -31,7 +61,7 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 
 ## 🛠️ Local Installation
 
-- Windows: Double click run_app.sh
+- Windows: Double click run_app.bat
 - Linux/MacOS: chmod +x run_app.sh; ./run_app.sh
 
 ---
