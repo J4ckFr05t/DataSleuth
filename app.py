@@ -789,7 +789,7 @@ with st.expander("📊 Database Connection Options", expanded=False):
 
 # --- Dynamic Table of Contents ---
 # Add logo above TOC
-st.sidebar.image("static/logo.png", use_container_width=True, width=150)
+st.sidebar.image("static/logo.png", use_container_width=False, width=250)
 
 toc = """
 # Table of Contents
@@ -2593,38 +2593,6 @@ if df is not None:
                 else:
                     st.info(f"No `{category_name}` matches found.")
 
-
-if st.button("💾 Save Session"):
-    if 'df' in locals() and df is not None:
-        session_data = {
-            "dataframe": df,
-            "primary_keys": primary_keys if 'primary_keys' in locals() else None,
-            "countries_input": st.session_state.get('countries_input', ""),
-            "regions_input": st.session_state.get('regions_input', ""),
-            "compliance_input": st.session_state.get('compliance_input', ""),
-            "business_unit_input": st.session_state.get('business_unit_input', ""),
-            "custom_categories": {
-                cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
-            }
-        }
-
-        # Prepare save directory
-        save_dir = "EDA_Reports"
-        os.makedirs(save_dir, exist_ok=True)
-
-        # Build filename: <original_filename>_<timestamp>.pkl
-        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_filename = f"{original_filename}_{timestamp}.pkl"
-        save_path = os.path.join(save_dir, full_filename)
-
-        # Save to file
-        with open(save_path, "wb") as f:
-            pickle.dump(session_data, f)
-
-        st.success(f"✅ Session saved to `{save_path}`")
-    else:
-        st.warning("⚠️ No dataframe available to save.")
 
 # Display total analysis time at the end
 if 'analysis_start_time' in st.session_state:

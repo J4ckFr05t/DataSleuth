@@ -40,7 +40,7 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
         elif not is_numeric:
             try:
                 # Try parsing as datetime
-                parsed_col = pd.to_datetime(col_data, errors="coerce", infer_datetime_format=True)
+                parsed_col = pd.to_datetime(col_data, errors="coerce")
                 if parsed_col.notna().sum() == 0 and pd.api.types.is_numeric_dtype(col_data):
                     parsed_col = pd.to_datetime(col_data, errors="coerce", unit="ms")
                     if parsed_col.notna().sum() == 0:
