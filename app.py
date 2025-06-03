@@ -1883,58 +1883,64 @@ if df is not None:
             
             # Display summary
             st.markdown("### 📊 Outlier Summary by Column")
-            st.dataframe(outlier_summary_df, use_container_width=True)
+            if not outlier_summary_df.empty:
+                st.dataframe(outlier_summary_df, use_container_width=True)
 
-            # Add insights section for basic outlier detection
-            st.markdown("### 💡 Insights")
-            
-            # Calculate overall statistics
-            total_outliers_z = outlier_summary_df['Z-score Outliers'].sum()
-            total_outliers_iqr = outlier_summary_df['IQR Outliers'].sum()
-            total_values = outlier_summary_df['Total Values'].sum()
-            
-            # Generate insights
-            insights = []
-            
-            # Overall outlier percentage
-            z_score_percentage = (total_outliers_z / total_values) * 100
-            iqr_percentage = (total_outliers_iqr / total_values) * 100
-            
-            insights.append(f"📈 **Overall Outlier Analysis:**")
-            insights.append(f"- Z-score method identified {total_outliers_z} outliers ({z_score_percentage:.2f}% of data)")
-            insights.append(f"- IQR method identified {total_outliers_iqr} outliers ({iqr_percentage:.2f}% of data)")
-            
-            # Compare methods
-            if abs(z_score_percentage - iqr_percentage) > 5:
-                insights.append(f"\n⚠️ **Method Comparison:**")
-                insights.append(f"- There's a significant difference between Z-score and IQR methods")
-                insights.append(f"- This suggests your data might not be normally distributed")
-                insights.append(f"- Consider using the IQR method for more reliable results")
-            
-            # Column-specific insights
-            insights.append(f"\n🔍 **Column-specific Insights:**")
-            for _, row in outlier_summary_df.iterrows():
-                col_name = row['Column']
-                z_outliers = row['Z-score Outliers']
-                iqr_outliers = row['IQR Outliers']
-                z_percent = row['Z-score Outlier %']
-                iqr_percent = row['IQR Outlier %']
+                # Add insights section for basic outlier detection
+                st.markdown("### 💡 Insights")
                 
-                if z_outliers > 0 or iqr_outliers > 0:
-                    insights.append(f"\n**{col_name}:**")
-                    if z_outliers > 0:
-                        insights.append(f"- Has {z_outliers} Z-score outliers ({z_percent:.2f}%)")
-                    if iqr_outliers > 0:
-                        insights.append(f"- Has {iqr_outliers} IQR outliers ({iqr_percent:.2f}%)")
+                # Calculate overall statistics
+                if 'Z-score Outliers' in outlier_summary_df.columns and 'IQR Outliers' in outlier_summary_df.columns:
+                    total_outliers_z = outlier_summary_df['Z-score Outliers'].sum()
+                    total_outliers_iqr = outlier_summary_df['IQR Outliers'].sum()
+                    total_values = outlier_summary_df['Total Values'].sum()
                     
-                    # Add specific insights based on the data
-                    if row['Std Dev'] > row['Mean']:
-                        insights.append(f"- High variability: Standard deviation ({row['Std Dev']:.2f}) is greater than mean ({row['Mean']:.2f})")
-                    if row['IQR'] > row['Mean']:
-                        insights.append(f"- Wide spread: IQR ({row['IQR']:.2f}) is greater than mean ({row['Mean']:.2f})")
-            
-            # Display insights
-            st.markdown("\n".join(insights))
+                    # Generate insights
+                    insights = []
+                    
+                    # Overall outlier percentage
+                    z_score_percentage = (total_outliers_z / total_values) * 100
+                    iqr_percentage = (total_outliers_iqr / total_values) * 100
+                    
+                    insights.append(f"📈 **Overall Outlier Analysis:**")
+                    insights.append(f"- Z-score method identified {total_outliers_z} outliers ({z_score_percentage:.2f}% of data)")
+                    insights.append(f"- IQR method identified {total_outliers_iqr} outliers ({iqr_percentage:.2f}% of data)")
+                    
+                    # Compare methods
+                    if abs(z_score_percentage - iqr_percentage) > 5:
+                        insights.append(f"\n⚠️ **Method Comparison:**")
+                        insights.append(f"- There's a significant difference between Z-score and IQR methods")
+                        insights.append(f"- This suggests your data might not be normally distributed")
+                        insights.append(f"- Consider using the IQR method for more reliable results")
+                    
+                    # Column-specific insights
+                    insights.append(f"\n🔍 **Column-specific Insights:**")
+                    for _, row in outlier_summary_df.iterrows():
+                        col_name = row['Column']
+                        z_outliers = row.get('Z-score Outliers', 0)
+                        iqr_outliers = row.get('IQR Outliers', 0)
+                        z_percent = row.get('Z-score Outlier %', 0)
+                        iqr_percent = row.get('IQR Outlier %', 0)
+                        
+                        if z_outliers > 0 or iqr_outliers > 0:
+                            insights.append(f"\n**{col_name}:**")
+                            if z_outliers > 0:
+                                insights.append(f"- Has {z_outliers} Z-score outliers ({z_percent:.2f}%)")
+                            if iqr_outliers > 0:
+                                insights.append(f"- Has {iqr_outliers} IQR outliers ({iqr_percent:.2f}%)")
+                            
+                            # Add specific insights based on the data
+                            if 'Std Dev' in row and 'Mean' in row and row['Std Dev'] > row['Mean']:
+                                insights.append(f"- High variability: Standard deviation ({row['Std Dev']:.2f}) is greater than mean ({row['Mean']:.2f})")
+                            if 'IQR' in row and 'Mean' in row and row['IQR'] > row['Mean']:
+                                insights.append(f"- Wide spread: IQR ({row['IQR']:.2f}) is greater than mean ({row['Mean']:.2f})")
+                    
+                    # Display insights
+                    st.markdown("\n".join(insights))
+                else:
+                    st.info("No outliers were detected in any of the columns using either Z-score or IQR methods.")
+            else:
+                st.info("No outliers were detected in any of the columns.")
 
             # Allow user to select a column for detailed analysis
             selected_col = st.selectbox(
