@@ -2362,7 +2362,7 @@ if df is not None:
                             st.info("No outliers found to export.")
 
     if sidebar_visible:
-        st.markdown("## Country/Region/Compliance/Business Unit Extraction Insights")
+        st.markdown("## Built-in Extraction Insights")
 
         # Initialize session state for extraction insights
         if 'extraction_insights_run' not in st.session_state:
