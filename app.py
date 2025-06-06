@@ -15,7 +15,7 @@ from lxml import etree
 import xmltodict
 import multiprocessing
 from functools import partial
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from column_processor import process_single_column
 import plotly.express as px
@@ -931,95 +931,47 @@ if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not
     # Reset the file pointer to the beginning
     uploaded_file.seek(0)
     
-    # Define chunk size for large files (adjust based on available memory)
-    CHUNK_SIZE = 100000  # Process 100k rows at a time
-    
     if uploaded_file.name.endswith(".csv"):
-        # Read CSV in chunks with explicit dtype handling
-        chunks = []
-        # First, read a small sample to infer dtypes
-        sample = pd.read_csv(uploaded_file, nrows=1000)
-        
-        # Convert dtypes to a dictionary and handle mixed types
-        dtype_dict = {}
-        for col in sample.columns:
-            # Check if column has mixed types
-            if sample[col].dtype == 'object':
-                # Try to convert to numeric if possible
-                try:
-                    pd.to_numeric(sample[col], errors='raise')
-                    dtype_dict[col] = 'float64'  # Use float64 to handle both int and float
-                except:
-                    dtype_dict[col] = 'object'
-            else:
-                dtype_dict[col] = sample[col].dtype
-        
-        # Reset file pointer
-        uploaded_file.seek(0)
-        
-        # Read in chunks with inferred dtypes
-        for chunk in pd.read_csv(uploaded_file, chunksize=CHUNK_SIZE, dtype=dtype_dict, low_memory=False):
-            chunks.append(chunk)
-        df = pd.concat(chunks, ignore_index=True)
+        df = pd.read_csv(uploaded_file)
     elif uploaded_file.name.endswith(".json"):
         try:
-            # For JSON files, we'll use a streaming approach
-            if uploaded_file.name.endswith(".jsonl") or uploaded_file.name.endswith(".ndjson"):
-                # JSON Lines format - read line by line
-                chunks = []
-                for chunk in pd.read_json(uploaded_file, lines=True, chunksize=CHUNK_SIZE):
-                    chunks.append(chunk)
-                df = pd.concat(chunks, ignore_index=True)
+            # Try to read as JSON first
+            json_data = json.load(uploaded_file)
+            
+            # Function to flatten nested JSON structure
+            def flatten_json(data, parent_key='', sep='_'):
+                items = []
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                        if isinstance(v, (dict, list)):
+                            items.extend(flatten_json(v, new_key, sep=sep).items())
+                        else:
+                            items.append((new_key, v))
+                elif isinstance(data, list):
+                    for i, item in enumerate(data):
+                        new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+                        if isinstance(item, (dict, list)):
+                            items.extend(flatten_json(item, new_key, sep=sep).items())
+                        else:
+                            items.append((new_key, item))
+                return dict(items)
+            
+            # If the JSON is a list of objects, process each object
+            if isinstance(json_data, list):
+                flattened_data = [flatten_json(item) for item in json_data]
+                df = pd.DataFrame(flattened_data)
             else:
-                # Regular JSON - read in chunks if it's a list of objects
-                json_data = json.load(uploaded_file)
-                
-                # Function to flatten nested JSON structure
-                def flatten_json(data, parent_key='', sep='_'):
-                    items = []
-                    if isinstance(data, dict):
-                        for k, v in data.items():
-                            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                            if isinstance(v, (dict, list)):
-                                items.extend(flatten_json(v, new_key, sep=sep).items())
-                            else:
-                                items.append((new_key, v))
-                    elif isinstance(data, list):
-                        # Process list in chunks to avoid memory issues
-                        chunk_size = 1000
-                        for i in range(0, len(data), chunk_size):
-                            chunk = data[i:i + chunk_size]
-                            for j, item in enumerate(chunk):
-                                new_key = f"{parent_key}{sep}{i+j}" if parent_key else str(i+j)
-                                if isinstance(item, (dict, list)):
-                                    items.extend(flatten_json(item, new_key, sep=sep).items())
-                                else:
-                                    items.append((new_key, item))
-                    return dict(items)
-                
-                # If the JSON is a list of objects, process each object in chunks
-                if isinstance(json_data, list):
-                    chunks = []
-                    chunk_size = 1000
-                    for i in range(0, len(json_data), chunk_size):
-                        chunk = json_data[i:i + chunk_size]
-                        flattened_chunk = [flatten_json(item) for item in chunk]
-                        chunks.append(pd.DataFrame(flattened_chunk))
-                    df = pd.concat(chunks, ignore_index=True)
-                else:
-                    # If it's a single object, flatten it and create a single-row DataFrame
-                    flattened_data = flatten_json(json_data)
-                    df = pd.DataFrame([flattened_data])
+                # If it's a single object, flatten it and create a single-row DataFrame
+                flattened_data = flatten_json(json_data)
+                df = pd.DataFrame([flattened_data])
                 
         except Exception as e:
             # If that fails, try to read as JSON lines
             try:
                 # Reset file pointer again before trying JSON lines
                 uploaded_file.seek(0)
-                chunks = []
-                for chunk in pd.read_json(uploaded_file, lines=True, chunksize=CHUNK_SIZE):
-                    chunks.append(chunk)
-                df = pd.concat(chunks, ignore_index=True)
+                df = pd.read_json(uploaded_file, lines=True)
             except Exception as e2:
                 st.error(f"Error reading JSON file: {str(e2)}")
                 st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
@@ -1039,41 +991,21 @@ if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not
                 
                 # Get all elements at the first level that have children
                 records = []
-                chunk_size = 1000
-                current_chunk = []
-                
                 for elem in root:
                     if len(elem) > 0:  # Element has children
                         record = {}
                         for child in elem:
                             record[child.tag] = child.text
-                        current_chunk.append(record)
-                        
-                        if len(current_chunk) >= chunk_size:
-                            records.extend(current_chunk)
-                            current_chunk = []
-                
-                if current_chunk:
-                    records.extend(current_chunk)
+                        records.append(record)
                 
                 if records:
                     df = pd.DataFrame(records)
                 else:
                     # If no nested structure found, try to parse as a flat structure
                     records = []
-                    current_chunk = []
-                    
                     for elem in root:
                         record = {elem.tag: elem.text}
-                        current_chunk.append(record)
-                        
-                        if len(current_chunk) >= chunk_size:
-                            records.extend(current_chunk)
-                            current_chunk = []
-                    
-                    if current_chunk:
-                        records.extend(current_chunk)
-                    
+                        records.append(record)
                     df = pd.DataFrame(records)
                     
             except Exception as e:
@@ -1122,15 +1054,7 @@ if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not
             st.error(f"Error processing XML file: {str(e)}")
             df = None
     else:
-        # For Excel files, read in chunks if possible
-        try:
-            chunks = []
-            for chunk in pd.read_excel(uploaded_file, chunksize=CHUNK_SIZE):
-                chunks.append(chunk)
-            df = pd.concat(chunks, ignore_index=True)
-        except:
-            # If chunking fails, read the whole file
-            df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file)
     
     # Store the dataframe in session state
     st.session_state.df = df
@@ -1376,7 +1300,7 @@ if df is not None:
         # Process the selected field if not already processed
         if selected_field not in st.session_state.processed_fields:
             st.info(f"Processing field: {selected_field}...")
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
                 process_func = partial(process_single_column, 
                                      total_records=len(df),
                                      primary_keys=primary_keys if 'primary_keys' in locals() else None,
@@ -1560,7 +1484,7 @@ if df is not None:
             fields_to_process = [col for col in current_batch if col not in st.session_state.processed_fields]
             if fields_to_process:
                 st.info(f"Processing {len(fields_to_process)} fields in current batch...")
-                with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                with ProcessPoolExecutor(max_workers=num_workers) as executor:
                     # Create a partial function with the common arguments
                     process_func = partial(process_single_column, 
                                          total_records=len(df),
@@ -1832,7 +1756,7 @@ if df is not None:
         pattern_status = st.empty()
 
         # Process patterns in parallel
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
             pattern_futures = {
                 executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
                 for col in df.columns
@@ -1916,7 +1840,7 @@ if df is not None:
             outlier_status = st.empty()
 
             # Process outliers in parallel
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
                 outlier_futures = {}
                 for col in numerical_cols:
                     # Skip columns with too many nulls or all same values
@@ -2479,7 +2403,7 @@ if df is not None:
             extraction_status = st.empty()
 
             # Process extractions in parallel
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
                 extraction_futures = {
                     executor.submit(
                         process_extraction_parallel,
@@ -2602,7 +2526,7 @@ if df is not None:
                 st.subheader(f"🔍 Extraction Summary for `{category_name}`")
 
                 # Process custom extractions in parallel
-                with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                with ProcessPoolExecutor(max_workers=num_workers) as executor:
                     custom_futures = {
                         executor.submit(
                             process_custom_extraction_parallel,
