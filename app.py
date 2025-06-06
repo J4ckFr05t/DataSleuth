@@ -591,6 +591,7 @@ if not st.session_state.loading_complete:
 #st.title("📊 DataSleuth - Smart EDA Viewer")
 
 st.info("ℹ️ To load new data, please refresh the page first to clear the current session.")
+st.markdown('<div id="load-previous"></div>', unsafe_allow_html=True)
 st.markdown("## Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
@@ -627,6 +628,7 @@ if uploaded_session:
         st.rerun()  # Force a rerun to trigger analytics
 
 # Add Database Loading Section
+st.markdown('<div id="load-database"></div>', unsafe_allow_html=True)
 st.markdown("## Load from Database")
 with st.expander("📊 Database Connection Options", expanded=False):
     db_type = st.selectbox(
@@ -755,35 +757,56 @@ with st.expander("📊 Database Connection Options", expanded=False):
         else:
             st.warning("⚠️ No saved connections found. Please save a connection first.")
 
-# --- Dynamic Table of Contents ---
-# Add logo above TOC
+# Add logo to sidebar
 st.sidebar.image("static/logo.png", use_container_width=False, width=250)
 
-toc = """
-# Table of Contents
-- [Load Previous Session](#load-previous-session)
-- [Load from Database](#load-from-database)
-- [Upload New File](#upload-new-file)
-- [Field-wise Summary](#field-wise-summary)
-- [Primary Key Identification](#primary-key-identification)
-- [Per Field Insights](#per-field-insights)
-- [Pattern Detection](#pattern-detection)
-- [Outlier Detection](#outlier-detection)
-- [Advanced Outlier Detection](#advanced-outlier-detection)
-"""
+def create_toc():
+    """Create a dynamic table of contents based on application state"""
+    toc_items = []
+    
+    # Always show these items
+    toc_items.append(("📂 Load Previous Session", "load-previous"))
+    toc_items.append(("💾 Load from Database", "load-database"))
+    toc_items.append(("📤 Upload New File", "upload-file"))
+    
+    # Show additional items if data is loaded from any source
+    if ('uploaded_file' in st.session_state and st.session_state.uploaded_file is not None) or \
+       ('df' in locals() and df is not None) or \
+       ('df' in st.session_state and st.session_state.df is not None):
+        toc_items.append(("📊 Field-wise Summary", "field-summary"))
+        toc_items.append(("🔑 Primary Key Identification", "primary-key"))
+        toc_items.append(("🔍 Per Field Insights", "field-insights"))
+        toc_items.append(("🔎 Pattern Detection", "pattern-detection"))
+        toc_items.append(("📈 Outlier Detection", "outlier-detection"))
+        toc_items.append(("📊 Advanced Outlier Detection", "advanced-outlier"))
+        
+        # Only show built-in extraction if enabled
+        if 'sidebar_visible' in st.session_state and st.session_state.sidebar_visible:
+            toc_items.append(("🌍 Built-in Extraction Insights", "builtin-extraction"))
+        
+        # Only show custom extraction if categories exist
+        if "custom_categories" in st.session_state and st.session_state.custom_categories:
+            toc_items.append(("🔧 Custom Extraction Insights", "custom-extraction-insights"))
+        
+        # Add Save Session at the end when data is loaded
+        toc_items.append(("💾 Save Session", "save-session"))
+    
+    return toc_items
 
-# Add Country/Region Extraction Insights to TOC if sidebar is visible
-if st.session_state.get('sidebar_visible', True):
-    toc += "\n- [Country/Region/Compliance/Business Unit Extraction Insights](#country-region-compliance-business-unit-extraction-insights)"
+# Create TOC header with refresh button
+col1, col2 = st.sidebar.columns([6, 1])
+with col1:
+    st.markdown("### 📑 Table of Contents")
+with col2:
+    if st.button("↻", help="Update Table of Contents", key="refresh_toc"):
+        st.rerun()
 
-# Append custom categories to the TOC if present
-if "custom_categories" in st.session_state and st.session_state.custom_categories:
-    toc += "\n- [Custom Extraction Insights](#custom-extraction-insights)"
+toc_items = create_toc()
 
-# Add Save Session to TOC
-toc += "\n- [Save Session](#save-session)"
+for label, anchor in toc_items:
+    st.sidebar.markdown(f'<a href="#{anchor}">{label}</a>', unsafe_allow_html=True)
 
-st.sidebar.markdown(toc)
+st.sidebar.markdown("---")  # Add a separator
 
 # Initialize session state for inputs if not exists
 if 'countries_input' not in st.session_state:
@@ -795,91 +818,90 @@ if 'compliance_input' not in st.session_state:
 if 'business_unit_input' not in st.session_state:
     st.session_state.business_unit_input = "IT-SOFTWARE, CLIENT OPERATIONS, WORKFORCE, STAFF, CS-CLIENT SERVICES, BUSINESS DEVELOPMENT, OPS-CLIENT DELIVERY, HR, Client Operations, Workforce Management, WORKFORCE MANAGEMENT, Facilities, SALES, LC-AUDIT, FA-FP&A, HR-RECRUITMENT / TALENT ACQUISITION, Ops-Client Delivery, HR, MANAGEMENT/MANAGERS, Client Services, OPS-WORKFORCE MANAGEMENT, LEGAL, AF-PREMISES AND ADMINISTRATION, SUPPORT HELP DESK, HR-CROSS FUNCTION ROLES, Infrastructure Desktop, Quality Assurance, OPS-GLOBAL PROCESSES, STANDARDS AND CONTINUOUS IMPROVEMENT, SUPPORT ANALYST, DEVELOPMENT DEVELOPER, IT-INFRASTRUCTURE OPERATIONS, IT-INFORMATION SECURITY, Training, MANAGEMENT/MANAGERS, CLIENT, SUPPORT ADMINISTRATION, HR-TRAINING, IT, HUMAN RESOURCES, BUSINESS INTELLIGENCE, HR-PAYROLL, HR-LEARNING AND DEVELOPMENT AND ORGANIZATIONAL DEVELOPMENT, INFRASTRUCTURE DESKTOP, OPS-BUSINESS INTELLIGENCE AND REPORTING, TRAINING, RECRUITING, OPS-QUALITY ANALYSIS / CONTINUOUS IMPROVEMENT, STAFF, STAFF, OPS-CROSS FUNCTION ROLES, IT-SERVICE DESK AND IT SERVICE MANAGEMENT, QUALITY ASSURANCE, FINANCE, IT-SUPPORT SERVICES, FA-PROCUREMENT AND SUPPORT, MKT- CROSS FUNCTION ROLES, IT-DATA COE, MANAGEMENT/MANAGERS, TRAINING, INFRASTRUCTURE SYSTEMS, Support Help Desk, MARKETING, HR-ONBOARDING, AF-HEALTH AND SAFETY, Professional Services, FACILITIES, AF-MAINTENANCE, ADMINISTRATION, DEVELOPMENT SCRIPTING, BD-BUSINESS DEVELOPMENT, HR-Training, CLIENT SERVICES, CS-STRATEGIC ACCOUNT MANAGEMENT, IT-INFRASTRUCTURE ARCHITECTURE AND ENGINEERING, MANAGEMENT/MANAGERS, HR, SECURITY, PAYROLL, MANAGEMENT TRAINING DEVELOPMENT, ANALYST, DS-CROSS FUNCTION ROLES, RISK, Ops-Quality Analysis / Continuous Improvement, Finance, OPS-PROJECT MANAGEMENT, OPS-Cross Function Roles, PROCUREMENT, INFORMATION SECURITY, HR-EMPLOYEE RELATIONS, EXECUTIVE MANAGEMENT, FA-CROSS FUNCTION ROLES, LC-COMPLIANCE, IT-Service Desk and IT Service Management, BD-CROSS FUNCTION ROLES, APPLICATION SUPPORT, Ops-Workforce Management, STDS-ROLLOUT & AUDIT, DS-CONSULTING AND SOLUTIONING, IT-Infrastructure Operations, CS-Client Services, IT-Software, HR-HELP DESK, INFRASTRUCTURE TELECOM, HR-COMPENSATION AND BENEFITS, MKT-DIGITAL MARKETING, INFRASTRUCTURE NETWORK, LC-LEGAL, Business Development, HR-Cross Function Roles, FA-Cross Function Roles, FA-FINANCIAL SYSTEMS, TRANSFORMATION AND AUTOMATION, BD-SALES ENABLEMENT, MKT-WEB DESIGN, HR-Payroll, Marketing, IT-CROSS FUNCTION ROLES, BD-PRESALES, INFRASTRUCTURE DATABASE, Recruiting, BD-Business Development, SALES, CLIENT, EM-EXECUTIVE ASSISTANTS, IT, STAFF, Development Scripting, TRANSFORMATION, EXTERNAL, IT, MANAGEMENT/MANAGERS, HR-DIVERSITY, EQUITY AND INCLUSION, Management Training Development, CORPORATE COMPLIANCE, Infrastructure Database, Human Resources, SUPPORT PRODUCT MANAGEMENT, AF-CROSS FUNCTION ROLES, DS-DATA ANALYTICS, Transformation, SUPPORT PROJECT MANAGEMENT, Risk, STDS-IMPROVEMENT DELIVERY PERFORMANCE, STAFF, TRAINING, IT-Infrastructure Architecture and Engineering, Infrastructure Systems, STRATEGIC ACCOUNT MANAGEMENT, IT-PLATFORM ENGINEERING SOLUTIONS COE, BUSINESS OPERATIONS, AF-LOGISTICS AND WAREHOUSING, DS-Consulting and Solutioning, MKT-CONTENT DEVELOPMENT, EM-LOCAL EXECUTIVE MANAGEMENT TIER 3, STAFF, STAFF, STAFF, Ops-Business Intelligence and Reporting, Legal, EM-LOCAL EXECUTIVE MANAGEMENT, FA-TREASURY, STAFF, IT, Support Product Management, LC-DATA PRIVACY, AUDITOR, Business Operations, Ops-Project Management, Support Project Management, HR, MANAGEMENT/MANAGERS, TRAINING, Business Intelligence, EM-LOCAL EXECUTIVE MANAGEMENT TIER 1, DEVELOPMENT ARCHITECT, AF-Premises and Administration, TRAINING, MANAGEMENT/MANAGERS, Payroll, Procurement, AF-Maintenance, Ops-Global Processes, Standards and Continuous Improvement, IT, STAFF, STAFF, HR-Onboarding, IT, TRAINING, HR-Learning and Development and Organizational Development"
 
-# Country/Region/Compliance/Business Unit Configs Section
-st.sidebar.markdown("### 🌍 Extraction Configs")
-sidebar_visible = st.sidebar.checkbox("Enable/Disable Built-in Extraction Configs", value=True, key='sidebar_visible')
+st.sidebar.markdown("### ⚙️ Extraction Configs")
 
-if sidebar_visible:
-    countries_input = st.sidebar.text_area(
-        "Country List (comma separated)",
-        value=st.session_state.countries_input
-    )
-    st.session_state.countries_input = countries_input
-    
-    regions_input = st.sidebar.text_area(
-        "Region List (comma separated)",
-        value=st.session_state.regions_input
-    )
-    st.session_state.regions_input = regions_input
+with st.sidebar.expander("Built-in Extraction Configs", expanded=False):
+    sidebar_visible = st.checkbox("Enable Built-in Extraction Configs", value=True, key='sidebar_visible')
 
-    compliance_input = st.sidebar.text_area(
-        "Compliance List (comma separated)",
-        value=st.session_state.compliance_input
-    )
-    st.session_state.compliance_input = compliance_input
+    if sidebar_visible:
+        countries_input = st.text_area(
+            "Country List (comma separated)",
+            value=st.session_state.countries_input
+        )
+        st.session_state.countries_input = countries_input
+        
+        regions_input = st.text_area(
+            "Region List (comma separated)",
+            value=st.session_state.regions_input
+        )
+        st.session_state.regions_input = regions_input
 
-    business_unit_input = st.sidebar.text_area(
-        "Business Unit List (comma separated)",
-        value=st.session_state.business_unit_input
-    )
-    st.session_state.business_unit_input = business_unit_input
+        compliance_input = st.text_area(
+            "Compliance List (comma separated)",
+            value=st.session_state.compliance_input
+        )
+        st.session_state.compliance_input = compliance_input
 
-    COUNTRY_LIST = [x.strip() for x in st.session_state.countries_input.split(",")]
-    REGION_LIST = [x.strip() for x in st.session_state.regions_input.split(",")]
-    COMPLIANCE_LIST = [x.strip() for x in st.session_state.compliance_input.split(",")]
-    BUSINESS_UNIT_LIST = [x.strip() for x in st.session_state.business_unit_input.split(",")]
+        business_unit_input = st.text_area(
+            "Business Unit List (comma separated)",
+            value=st.session_state.business_unit_input
+        )
+        st.session_state.business_unit_input = business_unit_input
 
-    # Build automatons once
-    COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
-    REGION_AUTOMATON = build_automaton(REGION_LIST)
-    COMPLIANCE_AUTOMATON = build_automaton(COMPLIANCE_LIST)
-    BUSINESS_UNIT_AUTOMATON = build_automaton(BUSINESS_UNIT_LIST)
+        COUNTRY_LIST = [x.strip() for x in st.session_state.countries_input.split(",")]
+        REGION_LIST = [x.strip() for x in st.session_state.regions_input.split(",")]
+        COMPLIANCE_LIST = [x.strip() for x in st.session_state.compliance_input.split(",")]
+        BUSINESS_UNIT_LIST = [x.strip() for x in st.session_state.business_unit_input.split(",")]
 
-st.sidebar.markdown("---")  # Add a separator
+        # Build automatons once
+        COUNTRY_AUTOMATON = build_automaton(COUNTRY_LIST)
+        REGION_AUTOMATON = build_automaton(REGION_LIST)
+        COMPLIANCE_AUTOMATON = build_automaton(COMPLIANCE_LIST)
+        BUSINESS_UNIT_AUTOMATON = build_automaton(BUSINESS_UNIT_LIST)
 
 # Add Custom Extraction Category section
-st.sidebar.markdown("### ➕ Add Custom Extraction Categories")
-
-# Initialize form state if not exists
-if 'form_submitted' not in st.session_state:
-    st.session_state.form_submitted = False
-
-with st.sidebar.form(key="custom_extraction_form"):
-    # Only show empty inputs if form was just submitted
-    if st.session_state.form_submitted:
-        custom_category = st.text_input("Category Name (e.g., Product, Company)", value="", key="category_input")
-        custom_keywords_input = st.text_area("Keywords (comma separated)", value="", key="keywords_input")
+with st.sidebar.expander("➕ Add Custom Extraction Categories", expanded=False):
+    # Initialize form state if not exists
+    if 'form_submitted' not in st.session_state:
         st.session_state.form_submitted = False
-    else:
-        custom_category = st.text_input("Category Name (e.g., Product, Company)", key="category_input")
-        custom_keywords_input = st.text_area("Keywords (comma separated)", key="keywords_input")
-    
-    submitted = st.form_submit_button("Add Custom Category")
 
-    if submitted:
-        if custom_category and custom_keywords_input:
-            # Initialize custom categories if not exists
-            if "custom_categories" not in st.session_state:
-                st.session_state.custom_categories = {}
-
-            # Prevent duplicate category overwrite unless intentional
-            if custom_category in st.session_state.custom_categories:
-                st.warning(f"⚠️ Category '{custom_category}' already exists. Choose another name.")
-            else:
-                keywords = [kw.strip() for kw in custom_keywords_input.split(",") if kw.strip()]
-                automaton = build_automaton(keywords)
-                st.session_state.custom_categories[custom_category] = {
-                    "keywords": keywords,
-                    "automaton": automaton
-                }
-                st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
-                # Set flag to clear form on next render
-                st.session_state.form_submitted = True
-                # Force a rerun to update the TOC
-                st.rerun()
+    with st.form(key="custom_extraction_form"):
+        # Only show empty inputs if form was just submitted
+        if st.session_state.form_submitted:
+            custom_category = st.text_input("Category Name (e.g., Product, Company)", value="", key="category_input")
+            custom_keywords_input = st.text_area("Keywords (comma separated)", value="", key="keywords_input")
+            st.session_state.form_submitted = False
         else:
-            st.error("❌ Please enter both a category name and at least one keyword.")
+            custom_category = st.text_input("Category Name (e.g., Product, Company)", key="category_input")
+            custom_keywords_input = st.text_area("Keywords (comma separated)", key="keywords_input")
+        
+        submitted = st.form_submit_button("Add Custom Category")
 
+        if submitted:
+            if custom_category and custom_keywords_input:
+                # Initialize custom categories if not exists
+                if "custom_categories" not in st.session_state:
+                    st.session_state.custom_categories = {}
+
+                # Prevent duplicate category overwrite unless intentional
+                if custom_category in st.session_state.custom_categories:
+                    st.warning(f"⚠️ Category '{custom_category}' already exists. Choose another name.")
+                else:
+                    keywords = [kw.strip() for kw in custom_keywords_input.split(",") if kw.strip()]
+                    automaton = build_automaton(keywords)
+                    st.session_state.custom_categories[custom_category] = {
+                        "keywords": keywords,
+                        "automaton": automaton
+                    }
+                    st.success(f"✅ Category '{custom_category}' added with {len(keywords)} keywords.")
+                    # Set flag to clear form on next render
+                    st.session_state.form_submitted = True
+                    # Force a rerun to update the TOC
+                    st.rerun()
+            else:
+                st.error("❌ Please enter both a category name and at least one keyword.")
+
+# Display current custom categories outside the main expander
 if "custom_categories" in st.session_state and st.session_state.custom_categories:
     st.sidebar.markdown("### 🗂️ Current Custom Categories")
     # Create a list of categories to iterate over
@@ -906,9 +928,6 @@ if "custom_categories" in st.session_state and st.session_state.custom_categorie
 
 st.sidebar.markdown("---")  # Add a separator
 
-# Data Filters Section
-st.sidebar.markdown("### 🔍 Data Filters")
-
 # Initialize session state for filters if not exists
 if 'active_filters' not in st.session_state:
     st.session_state.active_filters = {}
@@ -916,6 +935,7 @@ if 'filtered_data' not in st.session_state:
     st.session_state.filtered_data = None
 
 # File Upload Section
+st.markdown('<div id="upload-file"></div>', unsafe_allow_html=True)
 st.markdown("## Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
@@ -1171,6 +1191,7 @@ if df is not None:
     if st.session_state.filtered_data is not None:
         df = st.session_state.filtered_data
 
+    st.markdown('<div id="field-summary"></div>', unsafe_allow_html=True)
     st.markdown("## Field-wise Summary")
     summaries = []
     for col in df.columns:
@@ -1193,6 +1214,7 @@ if df is not None:
         html = summary_df.to_html(index=False)
         st.download_button("📄 Download as Confluence-compatible HTML", data=html, file_name="eda_summary.html", mime="text/html")
 
+    st.markdown('<div id="primary-key"></div>', unsafe_allow_html=True)
     st.markdown("## Primary Key Identification")
 
     # Step 1: Auto-detect single-column primary keys
@@ -1243,6 +1265,7 @@ if df is not None:
     else:
         st.info(f"🔢 Total Records: **{total_records}**  🔑 Primary key not selected.")
 
+    st.markdown('<div id="field-insights"></div>', unsafe_allow_html=True)
     st.markdown("## Per Field Insights")
     
     # Get the number of CPU cores available
@@ -1725,6 +1748,7 @@ if df is not None:
         else:
             st.success("✅ All fields have been processed!")
 
+    st.markdown('<div id="pattern-detection"></div>', unsafe_allow_html=True)
     st.markdown("## Pattern Detection")
     st.markdown("""
     Each value is scanned for **known formats** like:
@@ -1807,6 +1831,7 @@ if df is not None:
             else:
                 st.info("No patterns to export.")
 
+    st.markdown('<div id="outlier-detection"></div>', unsafe_allow_html=True)
     st.markdown("## Outlier Detection")
     st.markdown("""
     This section helps identify outliers in your numerical data using two methods:
@@ -1880,6 +1905,10 @@ if df is not None:
 
             # Create summary DataFrame
             outlier_summary_df = pd.DataFrame(list(outlier_futures.values()))
+            
+            # Clear progress indicators
+            outlier_progress.empty()
+            outlier_status.empty()
             
             # Display summary
             st.markdown("### 📊 Outlier Summary by Column")
@@ -2057,6 +2086,7 @@ if df is not None:
                     else:
                         st.info("No outliers to export.")
 
+    st.markdown('<div id="advanced-outlier"></div>', unsafe_allow_html=True)
     st.markdown("## Advanced Outlier Detection")
     st.markdown("""
     This section provides advanced outlier detection methods:
@@ -2387,7 +2417,8 @@ if df is not None:
                             st.info("No outliers found to export.")
 
     if sidebar_visible:
-        st.markdown("## Country/Region/Compliance/Business Unit Extraction Insights")
+        st.markdown('<div id="builtin-extraction"></div>', unsafe_allow_html=True)
+        st.markdown("## Built-in Extraction Insights")
 
         # Initialize session state for extraction insights
         if 'extraction_insights_run' not in st.session_state:
@@ -2567,6 +2598,46 @@ if df is not None:
                 else:
                     st.info(f"No `{category_name}` matches found.")
 
+# Move Save Session section to the end of the file, after all other sections
+if ('uploaded_file' in st.session_state and st.session_state.uploaded_file is not None) or \
+   ('df' in locals() and df is not None) or \
+   ('df' in st.session_state and st.session_state.df is not None):
+    st.markdown('<div id="save-session"></div>', unsafe_allow_html=True)
+    st.markdown("## Save Session")
+    if st.button("💾 Save Session", key="save_session_button"):
+        # Get the dataframe from either locals or session state
+        current_df = df if 'df' in locals() and df is not None else st.session_state.df
+        
+        if current_df is not None:
+            session_data = {
+                "dataframe": current_df,
+                "primary_keys": primary_keys if 'primary_keys' in locals() else None,
+                "countries_input": st.session_state.get('countries_input', ""),
+                "regions_input": st.session_state.get('regions_input', ""),
+                "compliance_input": st.session_state.get('compliance_input', ""),
+                "business_unit_input": st.session_state.get('business_unit_input', ""),
+                "custom_categories": {
+                    cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
+                }
+            }
+
+            # Prepare save directory
+            save_dir = "EDA_Reports"
+            os.makedirs(save_dir, exist_ok=True)
+
+            # Build filename: <original_filename>_<timestamp>.pkl
+            original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            full_filename = f"{original_filename}_{timestamp}.pkl"
+            save_path = os.path.join(save_dir, full_filename)
+
+            # Save to file
+            with open(save_path, "wb") as f:
+                pickle.dump(session_data, f)
+
+            st.success(f"✅ Session saved to `{save_path}`")
+        else:
+            st.warning("⚠️ No dataframe available to save.")
 
 # Display total analysis time at the end
 if 'analysis_start_time' in st.session_state:
@@ -2578,38 +2649,5 @@ if 'analysis_start_time' in st.session_state:
     else:
         time_str = f"{seconds:.2f} seconds"
     st.success(f"⏱️ Total Analysis Time: {time_str}")
-
-st.markdown("## Save Session")
-if st.button("💾 Save Session", key="save_session_button"):
-    if 'df' in locals() and df is not None:
-        session_data = {
-            "dataframe": df,
-            "primary_keys": primary_keys if 'primary_keys' in locals() else None,
-            "countries_input": st.session_state.get('countries_input', ""),
-            "regions_input": st.session_state.get('regions_input', ""),
-            "compliance_input": st.session_state.get('compliance_input', ""),
-            "business_unit_input": st.session_state.get('business_unit_input', ""),
-            "custom_categories": {
-                cat: data["keywords"] for cat, data in st.session_state.get("custom_categories", {}).items()
-            }
-        }
-
-        # Prepare save directory
-        save_dir = "EDA_Reports"
-        os.makedirs(save_dir, exist_ok=True)
-
-        # Build filename: <original_filename>_<timestamp>.pkl
-        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "session"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_filename = f"{original_filename}_{timestamp}.pkl"
-        save_path = os.path.join(save_dir, full_filename)
-
-        # Save to file
-        with open(save_path, "wb") as f:
-            pickle.dump(session_data, f)
-
-        st.success(f"✅ Session saved to `{save_path}`")
-    else:
-        st.warning("⚠️ No dataframe available to save.")
 
 
