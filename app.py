@@ -793,8 +793,14 @@ def create_toc():
     
     return toc_items
 
-# Create and display TOC
-st.sidebar.markdown("### 📑 Table of Contents")
+# Create TOC header with refresh button
+col1, col2 = st.sidebar.columns([6, 1])
+with col1:
+    st.markdown("### 📑 Table of Contents")
+with col2:
+    if st.button("↻", help="Update Table of Contents", key="refresh_toc"):
+        st.rerun()
+
 toc_items = create_toc()
 
 for label, anchor in toc_items:
