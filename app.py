@@ -24,6 +24,68 @@ import json
 from pyhive import hive  # Add this import for Spark Thrift Server connection
 import time  # Add time module for tracking analysis duration
 from tqdm import tqdm
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+
+def load_country_coordinates():
+    """Load country coordinates from CSV file"""
+    try:
+        return pd.read_csv('static/country-coord.csv')
+    except Exception as e:
+        st.error(f"Error loading country coordinates: {str(e)}")
+        return None
+
+def match_country_name(country_name, country_df):
+    """Match country name using fuzzy matching"""
+    if pd.isna(country_name):
+        return None
+    
+    # Try exact match first
+    exact_match = country_df[country_df['Country'].str.lower() == country_name.lower()]
+    if not exact_match.empty:
+        return exact_match.iloc[0]
+    
+    # Try fuzzy matching
+    matches = process.extractOne(country_name, country_df['Country'], scorer=fuzz.token_sort_ratio)
+    if matches and matches[1] >= 80:  # Threshold for fuzzy matching
+        return country_df[country_df['Country'] == matches[0]].iloc[0]
+    
+    return None
+
+def create_country_map(df, country_column, value_column=None):
+    """Create an interactive map of countries with optional value visualization"""
+    country_coords = load_country_coordinates()
+    if country_coords is None:
+        return
+    
+    # Create a mapping of countries to their coordinates
+    country_data = []
+    for country in df[country_column].unique():
+        if pd.isna(country):
+            continue
+            
+        match = match_country_name(country, country_coords)
+        if match is not None:
+            data = {
+                'country': country,
+                'lat': match['Latitude (average)'],
+                'lon': match['Longitude (average)']
+            }
+            if value_column:
+                data['value'] = df[df[country_column] == country][value_column].sum()
+            country_data.append(data)
+    
+    if not country_data:
+        st.warning("No matching countries found in the coordinates database.")
+        return
+    
+    map_df = pd.DataFrame(country_data)
+    
+    # Create the map
+    if value_column:
+        st.map(map_df, latitude='lat', longitude='lon', size='value')
+    else:
+        st.map(map_df, latitude='lat', longitude='lon')
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -2493,6 +2555,51 @@ if df is not None:
             if not summary_df.empty:
                 st.write("### 🌍 Country Extraction Summary by Column")
                 st.dataframe(summary_df)
+                
+                # Add country map visualization
+                st.write("### 🗺️ Country Distribution Map")
+                
+                # Create a DataFrame for mapping
+                map_data = []
+                for _, row in summary_df.iterrows():
+                    countries = row['Countries Found'].split(', ')
+                    for country in countries:
+                        map_data.append({
+                            'country': country,
+                            'field': row['Field'],
+                            'coverage': float(row['Coverage'].split(' ')[1].strip('(%)'))
+                        })
+                
+                if map_data:
+                    map_df = pd.DataFrame(map_data)
+                    
+                    # Add field selector
+                    available_fields = sorted(map_df['field'].unique())
+                    selected_fields = st.multiselect(
+                        "Select fields to display on map",
+                        options=available_fields,
+                        default=available_fields[:1] if available_fields else None,
+                        help="Choose which fields' country data to display on the map"
+                    )
+                    
+                    if selected_fields:
+                        # Filter map data for selected fields
+                        filtered_map_df = map_df[map_df['field'].isin(selected_fields)]
+                        
+                        # Group by country and sum coverage for selected fields
+                        country_coverage = filtered_map_df.groupby('country').agg({
+                            'coverage': 'sum',
+                            'field': lambda x: ', '.join(sorted(set(x)))
+                        }).reset_index()
+                        
+                        # Create the map with filtered data
+                        create_country_map(country_coverage, country_column='country', value_column='coverage')
+                        
+                        # Show field information in tooltip
+                        st.info(f"Map shows countries from fields: {', '.join(selected_fields)}")
+                    else:
+                        st.warning("Please select at least one field to display on the map")
+                
                 with st.expander("📤 Export Country Results"):
                     csv = summary_df.to_csv(index=False).encode()
                     st.download_button("📄 Download as CSV", data=csv, file_name="country_extraction.csv", mime="text/csv")
