@@ -781,7 +781,7 @@ def create_toc():
         toc_items.append(("📊 Advanced Outlier Detection", "advanced-outlier"))
         
         # Only show built-in extraction if enabled
-        if 'sidebar_visible' in st.session_state and st.session_state.sidebar_visible:
+        if st.session_state.get('sidebar_visible', True):  # Default to True if not set
             toc_items.append(("🌍 Built-in Extraction Insights", "builtin-extraction"))
         
         # Only show custom extraction if categories exist
