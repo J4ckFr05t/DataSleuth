@@ -2597,6 +2597,52 @@ if df is not None:
                         
                         # Show field information in tooltip
                         st.info(f"Map shows countries from fields: {', '.join(selected_fields)}")
+                        
+                        # Calculate actual coverage for each country
+                        country_value_coverage = []
+                        for field in selected_fields:
+                            field_data = df[field].dropna()
+                            total_records = len(df)
+                            
+                            # Process each record to extract countries
+                            for _, value in field_data.items():
+                                if pd.isna(value):
+                                    continue
+                                    
+                                # Extract countries using the existing function
+                                result = extract_country_region(value)
+                                if result and result['countries']:
+                                    for country in result['countries']:
+                                        # Find if country already exists in our list
+                                        country_entry = next((x for x in country_value_coverage if x['country'] == country), None)
+                                        if country_entry:
+                                            country_entry['count'] += 1
+                                        else:
+                                            country_value_coverage.append({
+                                                'country': country,
+                                                'count': 1,
+                                                'fields': set([field])
+                                            })
+                        
+                        # Convert to DataFrame and calculate percentages
+                        if country_value_coverage:
+                            coverage_df = pd.DataFrame(country_value_coverage)
+                            coverage_df['coverage'] = (coverage_df['count'] / total_records * 100).round(2)
+                            coverage_df['fields'] = coverage_df['fields'].apply(lambda x: ', '.join(sorted(x)))
+                            coverage_df = coverage_df.sort_values('coverage', ascending=False)
+                            coverage_df = coverage_df[['country', 'coverage', 'count', 'fields']]
+                            coverage_df.columns = ['Country', 'Coverage (%)', 'Count', 'Fields']
+                            
+                            # Display the coverage table
+                            st.write("### 📊 Country Coverage Table")
+                            st.dataframe(coverage_df, use_container_width=True)
+                            
+                            # Add export option for coverage table
+                            with st.expander("📤 Export Coverage Table"):
+                                csv = coverage_df.to_csv(index=False).encode()
+                                st.download_button("📄 Download as CSV", data=csv, file_name="country_coverage.csv", mime="text/csv")
+                        else:
+                            st.info("No country values found in the selected fields.")
                     else:
                         st.warning("Please select at least one field to display on the map")
                 
