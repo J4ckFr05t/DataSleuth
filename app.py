@@ -592,7 +592,7 @@ if not st.session_state.loading_complete:
 
 st.info("ℹ️ To load new data, please refresh the page first to clear the current session.")
 st.markdown('<div id="load-previous"></div>', unsafe_allow_html=True)
-st.markdown("## Load Previous Session")
+st.markdown("## ♻️ Load Previous Session")
 uploaded_session = st.file_uploader("📂 Load Previous Session", type=["pkl"])
 if uploaded_session:
     # Check if we've already loaded this session
@@ -629,8 +629,8 @@ if uploaded_session:
 
 # Add Database Loading Section
 st.markdown('<div id="load-database"></div>', unsafe_allow_html=True)
-st.markdown("## Load from Database")
-with st.expander("📊 Database Connection Options", expanded=False):
+st.markdown("## 🗄️ Load from Database")
+with st.expander("🔌 Database Connection Options", expanded=False):
     db_type = st.selectbox(
         "Select Database Type",
         ["Spark Thrift Server"],
@@ -765,28 +765,28 @@ def create_toc():
     toc_items = []
     
     # Always show these items
-    toc_items.append(("📂 Load Previous Session", "load-previous"))
-    toc_items.append(("💾 Load from Database", "load-database"))
-    toc_items.append(("📤 Upload New File", "upload-file"))
+    toc_items.append(("♻️ Load Previous Session", "load-previous"))
+    toc_items.append(("🗄️ Load from Database", "load-database"))
+    toc_items.append(("🗃️ Upload New File", "upload-file"))
     
     # Show additional items if data is loaded from any source
     if ('uploaded_file' in st.session_state and st.session_state.uploaded_file is not None) or \
        ('df' in locals() and df is not None) or \
        ('df' in st.session_state and st.session_state.df is not None):
-        toc_items.append(("📊 Field-wise Summary", "field-summary"))
+        toc_items.append(("📋 Field-wise Summary", "field-summary"))
         toc_items.append(("🔑 Primary Key Identification", "primary-key"))
-        toc_items.append(("🔍 Per Field Insights", "field-insights"))
-        toc_items.append(("🔎 Pattern Detection", "pattern-detection"))
-        toc_items.append(("📈 Outlier Detection", "outlier-detection"))
-        toc_items.append(("📊 Advanced Outlier Detection", "advanced-outlier"))
+        toc_items.append(("🧠 Per Field Insights", "field-insights"))
+        toc_items.append(("🧬 Pattern Detection", "pattern-detection"))
+        toc_items.append(("🎯 Outlier Detection", "outlier-detection"))
+        toc_items.append(("🧪 Advanced Outlier Detection", "advanced-outlier"))
         
         # Only show built-in extraction if enabled
         if st.session_state.get('sidebar_visible', True):  # Default to True if not set
-            toc_items.append(("🌍 Built-in Extraction Insights", "builtin-extraction"))
+            toc_items.append(("📦 Built-in Extraction Insights", "builtin-extraction"))
         
         # Only show custom extraction if categories exist
         if "custom_categories" in st.session_state and st.session_state.custom_categories:
-            toc_items.append(("🔧 Custom Extraction Insights", "custom-extraction-insights"))
+            toc_items.append(("🛠️ Custom Extraction Insights", "custom-extraction-insights"))
         
         # Add Save Session at the end when data is loaded
         toc_items.append(("💾 Save Session", "save-session"))
@@ -796,7 +796,7 @@ def create_toc():
 # Create TOC header with refresh button
 col1, col2 = st.sidebar.columns([6, 1])
 with col1:
-    st.markdown("### 📑 Table of Contents")
+    st.markdown("### 🗂️ Table of Contents")
 with col2:
     if st.button("↻", help="Update Table of Contents", key="refresh_toc"):
         st.rerun()
@@ -936,7 +936,7 @@ if 'filtered_data' not in st.session_state:
 
 # File Upload Section
 st.markdown('<div id="upload-file"></div>', unsafe_allow_html=True)
-st.markdown("## Upload New File")
+st.markdown("## 🗃️ Upload New File")
 uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
 if uploaded_file is not None:
@@ -1192,7 +1192,7 @@ if df is not None:
         df = st.session_state.filtered_data
 
     st.markdown('<div id="field-summary"></div>', unsafe_allow_html=True)
-    st.markdown("## Field-wise Summary")
+    st.markdown("## 📋 Field-wise Summary")
     summaries = []
     for col in df.columns:
         dtype = simplify_dtype(df[col].dtype)
@@ -1215,7 +1215,7 @@ if df is not None:
         st.download_button("📄 Download as Confluence-compatible HTML", data=html, file_name="eda_summary.html", mime="text/html")
 
     st.markdown('<div id="primary-key"></div>', unsafe_allow_html=True)
-    st.markdown("## Primary Key Identification")
+    st.markdown("## 🔑 Primary Key Identification")
 
     # Step 1: Auto-detect single-column primary keys
     auto_keys = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
@@ -1266,7 +1266,7 @@ if df is not None:
         st.info(f"🔢 Total Records: **{total_records}**  🔑 Primary key not selected.")
 
     st.markdown('<div id="field-insights"></div>', unsafe_allow_html=True)
-    st.markdown("## Per Field Insights")
+    st.markdown("## 🧠 Per Field Insights")
     
     # Get the number of CPU cores available
     num_cores = multiprocessing.cpu_count()
@@ -1290,7 +1290,7 @@ if df is not None:
     total_fields = len(all_fields)
 
     # Add field selection option
-    st.markdown("### 🔍 Field Selection")
+    st.markdown("### Field Selection")
     view_mode = st.radio(
         "Choose how to view field insights:",
         ["View All Fields (Paginated)", "Select Specific Field"],
@@ -1749,7 +1749,7 @@ if df is not None:
             st.success("✅ All fields have been processed!")
 
     st.markdown('<div id="pattern-detection"></div>', unsafe_allow_html=True)
-    st.markdown("## Pattern Detection")
+    st.markdown("## 🧬 Pattern Detection")
     st.markdown("""
     Each value is scanned for **known formats** like:
     - **Internal IP**: Private IP addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, etc.)
@@ -1832,7 +1832,7 @@ if df is not None:
                 st.info("No patterns to export.")
 
     st.markdown('<div id="outlier-detection"></div>', unsafe_allow_html=True)
-    st.markdown("## Outlier Detection")
+    st.markdown("## 🎯 Outlier Detection")
     st.markdown("""
     This section helps identify outliers in your numerical data using two methods:
     1. **Z-score**: Identifies values that deviate more than 3 standard deviations from the mean
@@ -2087,7 +2087,7 @@ if df is not None:
                         st.info("No outliers to export.")
 
     st.markdown('<div id="advanced-outlier"></div>', unsafe_allow_html=True)
-    st.markdown("## Advanced Outlier Detection")
+    st.markdown("## 🧪 Advanced Outlier Detection")
     st.markdown("""
     This section provides advanced outlier detection methods:
     1. **Isolation Forest**: Detects outliers by isolating observations in random forests
@@ -2418,7 +2418,7 @@ if df is not None:
 
     if sidebar_visible:
         st.markdown('<div id="builtin-extraction"></div>', unsafe_allow_html=True)
-        st.markdown("## Built-in Extraction Insights")
+        st.markdown("## 📦 Built-in Extraction Insights")
 
         # Initialize session state for extraction insights
         if 'extraction_insights_run' not in st.session_state:
@@ -2529,7 +2529,7 @@ if df is not None:
     # --- Custom Extraction Summary ---
     if "custom_categories" in st.session_state and st.session_state.custom_categories and len(st.session_state.custom_categories) > 0:
         st.markdown('<div id="custom-extraction-insights"></div>', unsafe_allow_html=True)
-        st.markdown("## Custom Extraction Insights")
+        st.markdown("## 🛠️ Custom Extraction Insights")
         
         # Initialize session state for custom extraction
         if 'custom_extraction_run' not in st.session_state:
@@ -2603,7 +2603,7 @@ if ('uploaded_file' in st.session_state and st.session_state.uploaded_file is no
    ('df' in locals() and df is not None) or \
    ('df' in st.session_state and st.session_state.df is not None):
     st.markdown('<div id="save-session"></div>', unsafe_allow_html=True)
-    st.markdown("## Save Session")
+    st.markdown("## 💾 Save Session")
     if st.button("💾 Save Session", key="save_session_button"):
         # Get the dataframe from either locals or session state
         current_df = df if 'df' in locals() and df is not None else st.session_state.df
