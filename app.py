@@ -72,7 +72,7 @@ def create_country_map(df, country_column, value_column=None):
                 'lon': match['Longitude (average)']
             }
             if value_column:
-                data['value'] = df[df[country_column] == country][value_column].sum()
+                data['value'] = df[df[country_column] == country][value_column].iloc[0]
             country_data.append(data)
     
     if not country_data:
@@ -81,11 +81,69 @@ def create_country_map(df, country_column, value_column=None):
     
     map_df = pd.DataFrame(country_data)
     
-    # Create the map
-    if value_column:
-        st.map(map_df, latitude='lat', longitude='lon', size='value')
-    else:
-        st.map(map_df, latitude='lat', longitude='lon')
+    # Create the map using Plotly
+    fig = go.Figure()
+    
+    # Add the choropleth map
+    fig.add_trace(go.Choropleth(
+        locations=map_df['country'],
+        z=map_df['value'] if value_column else None,
+        locationmode='country names',
+        colorscale='Viridis',
+        marker_line_color='rgba(255, 255, 255, 0.2)',
+        marker_line_width=0.5,
+        colorbar_title='Coverage (%)',
+        showscale=True,
+        hovertemplate='<b>%{location}</b><br>' +
+                     'Coverage: %{z:.2f}%<br>' +
+                     '<extra></extra>'
+    ))
+    
+    # Add country labels
+    fig.add_trace(go.Scattergeo(
+        lon=map_df['lon'],
+        lat=map_df['lat'],
+        text=map_df['country'],
+        mode='text',
+        textposition='middle center',
+        textfont=dict(
+            size=10,
+            color='white',
+            family='Arial'
+        ),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # Update layout for better visualization with dark theme
+    fig.update_layout(
+        template='plotly_dark',
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            showland=True,
+            showcountries=True,
+            countrycolor='rgba(255, 255, 255, 0.2)',
+            landcolor='rgba(255, 255, 255, 0.1)',
+            coastlinecolor='rgba(255, 255, 255, 0.3)',
+            projection_type='equirectangular',
+            bgcolor='rgba(0,0,0,0)'
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=30, b=0),
+        coloraxis_colorbar=dict(
+            title='Coverage (%)',
+            title_font=dict(color='white'),
+            tickfont=dict(color='white')
+        ),
+        height=800,  # Make the map taller
+        width=None,  # Let it fill the container width
+        autosize=True
+    )
+    
+    # Show the map
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
@@ -2556,9 +2614,6 @@ if df is not None:
                 st.write("### 🌍 Country Extraction Summary by Column")
                 st.dataframe(summary_df)
                 
-                # Add country map visualization
-                st.write("### 🗺️ Country Distribution Map")
-                
                 # Create a DataFrame for mapping
                 map_data = []
                 for _, row in summary_df.iterrows():
@@ -2591,12 +2646,6 @@ if df is not None:
                             'coverage': 'sum',
                             'field': lambda x: ', '.join(sorted(set(x)))
                         }).reset_index()
-                        
-                        # Create the map with filtered data
-                        create_country_map(country_coverage, country_column='country', value_column='coverage')
-                        
-                        # Show field information in tooltip
-                        st.info(f"Map shows countries from fields: {', '.join(selected_fields)}")
                         
                         # Calculate actual coverage for each country
                         country_value_coverage = []
@@ -2643,6 +2692,15 @@ if df is not None:
                                 st.download_button("📄 Download as CSV", data=csv, file_name="country_coverage.csv", mime="text/csv")
                         else:
                             st.info("No country values found in the selected fields.")
+                        
+                        # Create the map with filtered data using coverage table data
+                        st.write("### 🗺️ Country Distribution Map")
+                        # Use the coverage data directly from the coverage table
+                        map_data = coverage_df.rename(columns={'Country': 'country', 'Coverage (%)': 'coverage'})
+                        create_country_map(map_data, country_column='country', value_column='coverage')
+                        
+                        # Show field information in tooltip
+                        st.info(f"Map shows countries from fields: {', '.join(selected_fields)}")
                     else:
                         st.warning("Please select at least one field to display on the map")
                 
