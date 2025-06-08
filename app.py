@@ -26,6 +26,7 @@ import time  # Add time module for tracking analysis duration
 from tqdm import tqdm
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
+import pydeck as pdk
 
 def load_country_coordinates():
     """Load country coordinates from CSV file"""
@@ -53,7 +54,9 @@ def match_country_name(country_name, country_df):
     return None
 
 def create_country_map(df, country_column, value_column=None):
-    """Create an interactive map of countries with optional value visualization"""
+    """Create an interactive map of countries with bubble sizes based on coverage, with optional heatmap and connection lines toggles."""
+    import pydeck as pdk
+    
     country_coords = load_country_coordinates()
     if country_coords is None:
         return
@@ -72,7 +75,8 @@ def create_country_map(df, country_column, value_column=None):
                 'lon': match['Longitude (average)']
             }
             if value_column:
-                data['value'] = df[df[country_column] == country][value_column].iloc[0]
+                value = df[df[country_column] == country][value_column].iloc[0]
+                data['value'] = round(value, 2)
             country_data.append(data)
     
     if not country_data:
@@ -81,69 +85,113 @@ def create_country_map(df, country_column, value_column=None):
     
     map_df = pd.DataFrame(country_data)
     
-    # Create the map using Plotly
-    fig = go.Figure()
+    # Calculate bubble radius based on coverage value
+    if value_column:
+        min_value = map_df['value'].min()
+        max_value = map_df['value'].max()
+        map_df['radius'] = map_df['value'].apply(
+            lambda x: 100000 + (400000 - 100000) * ((x - min_value) / (max_value - min_value))
+        )
+    else:
+        map_df['radius'] = 200000  # Default radius if no value column
     
-    # Add the choropleth map
-    fig.add_trace(go.Choropleth(
-        locations=map_df['country'],
-        z=map_df['value'] if value_column else None,
-        locationmode='country names',
-        colorscale='Viridis',
-        marker_line_color='rgba(255, 255, 255, 0.2)',
-        marker_line_width=0.5,
-        colorbar_title='Coverage (%)',
-        showscale=True,
-        hovertemplate='<b>%{location}</b><br>' +
-                     'Coverage: %{z:.2f}%<br>' +
-                     '<extra></extra>'
-    ))
+    # Heatmap toggle
+    show_heatmap = st.checkbox("Show Heatmap Layer", value=False, key="show_heatmap_layer")
+    # Line connections toggle
+    show_lines = st.checkbox("Show Country Connections", value=False, key="show_country_connections")
     
-    # Add country labels
-    fig.add_trace(go.Scattergeo(
-        lon=map_df['lon'],
-        lat=map_df['lat'],
-        text=map_df['country'],
-        mode='text',
-        textposition='middle center',
-        textfont=dict(
-            size=10,
-            color='white',
-            family='Arial'
-        ),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    # Create the pydeck map
+    view_state = pdk.ViewState(
+        latitude=20,
+        longitude=0,
+        zoom=1,
+        pitch=0
+    )
     
-    # Update layout for better visualization with dark theme
-    fig.update_layout(
-        template='plotly_dark',
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            showland=True,
-            showcountries=True,
-            countrycolor='rgba(255, 255, 255, 0.2)',
-            landcolor='rgba(255, 255, 255, 0.1)',
-            coastlinecolor='rgba(255, 255, 255, 0.3)',
-            projection_type='equirectangular',
-            bgcolor='rgba(0,0,0,0)'
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=0, r=0, t=30, b=0),
-        coloraxis_colorbar=dict(
-            title='Coverage (%)',
-            title_font=dict(color='white'),
-            tickfont=dict(color='white')
-        ),
-        height=800,  # Make the map taller
-        width=None,  # Let it fill the container width
-        autosize=True
+    # Create the scatterplot layer (green color)
+    scatter_layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=map_df,
+        get_position=['lon', 'lat'],
+        get_radius='radius',
+        get_fill_color=[34, 197, 94, 180],  # Green color with some transparency
+        pickable=True,
+        auto_highlight=True,
+        radius_scale=1,
+        radius_min_pixels=3,
+        radius_max_pixels=100
+    )
+    
+    # Create the text layer for country labels
+    text_layer = pdk.Layer(
+        'TextLayer',
+        data=map_df,
+        get_position=['lon', 'lat'],
+        get_text='country',
+        get_color=[255, 255, 255],
+        get_size=12,
+        get_alignment_baseline='center'
+    )
+    
+    layers = [scatter_layer, text_layer]
+    
+    # Optionally add heatmap layer
+    if show_heatmap:
+        heatmap_layer = pdk.Layer(
+            "HeatmapLayer",
+            data=map_df,
+            get_position=['lon', 'lat'],
+            get_weight='value' if value_column else None,
+            aggregation='SUM',
+            opacity=0.4,
+        )
+        layers.append(heatmap_layer)
+    
+    # Optionally add line connections layer
+    if show_lines and value_column and len(map_df) > 1:
+        # Sort by coverage descending
+        sorted_df = map_df.sort_values('value', ascending=False).reset_index(drop=True)
+        # Create line segments: connect each country to the next
+        line_data = []
+        for i in range(len(sorted_df) - 1):
+            line_data.append({
+                'start_lon': sorted_df.loc[i, 'lon'],
+                'start_lat': sorted_df.loc[i, 'lat'],
+                'end_lon': sorted_df.loc[i+1, 'lon'],
+                'end_lat': sorted_df.loc[i+1, 'lat'],
+                'start_country': sorted_df.loc[i, 'country'],
+                'end_country': sorted_df.loc[i+1, 'country'],
+                'start_value': sorted_df.loc[i, 'value'],
+                'end_value': sorted_df.loc[i+1, 'value']
+            })
+        line_layer = pdk.Layer(
+            "LineLayer",
+            data=line_data,
+            get_source_position='[start_lon, start_lat]',
+            get_target_position='[end_lon, end_lat]',
+            get_width=2,
+            get_color=[200, 255, 200, 180],  # Thin, light green line
+            pickable=False,
+        )
+        layers.append(line_layer)
+    
+    # Create the deck
+    deck = pdk.Deck(
+        layers=layers,
+        initial_view_state=view_state,
+        map_style='dark',
+        tooltip={
+            'html': '<b>{country}</b><br/>Coverage: {value}%' if value_column else '<b>{country}</b>',
+            'style': {
+                'backgroundColor': 'rgba(0, 0, 0, 0.8)',
+                'color': 'white',
+                'padding': '5px'
+            }
+        }
     )
     
     # Show the map
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
+    st.pydeck_chart(deck, use_container_width=True)
 
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
