@@ -1348,15 +1348,32 @@ if df is not None:
                         else:  # Equals
                             # Get unique values for the field
                             unique_values = sorted(df[field].dropna().unique())
-                            value = st.selectbox(
-                                f"Equals value for {field}",
-                                options=unique_values,
-                                key=f"equals_{field}"
+                            # Create a mapping of lowercase to original case
+                            case_mapping = {str(val).lower(): str(val) for val in unique_values}
+                            # Get unique lowercase values for comparison
+                            unique_lower_values = sorted(list(case_mapping.keys()))
+                            
+                            # Get current selected values for this field
+                            current_selected = []
+                            if field in st.session_state.active_filters:
+                                filter_config = st.session_state.active_filters[field]
+                                if filter_config["type"] == "equals":
+                                    current_selected = [str(val).lower() for val in filter_config["values"]]
+                            
+                            # Create multiselect with search, showing original case values
+                            selected_values = st.multiselect(
+                                f"Select values for {field}",
+                                options=unique_lower_values,
+                                default=current_selected,
+                                key=f"equals_{field}",
+                                format_func=lambda x: case_mapping[x]  # Display original case
                             )
-                            filter_selections[field] = {
-                                "type": "equals",
-                                "value": value.lower() if isinstance(value, str) else value
-                            }
+                            
+                            if selected_values:
+                                filter_selections[field] = {
+                                    "type": "equals",
+                                    "values": selected_values  # Store lowercase values for comparison
+                                }
                     
             except Exception as e:
                 st.error(f"Error processing field {field}: {str(e)}")
@@ -1384,7 +1401,12 @@ if df is not None:
                         elif filter_type == "greater_than":
                             mask = filtered_df[field] > filter_config["value"]
                         elif filter_type == "equals":
-                            mask = filtered_df[field].astype(str).str.lower() == (filter_config["value"].lower() if isinstance(filter_config["value"], str) else filter_config["value"])
+                            if isinstance(filter_config["values"], list):
+                                # For string fields with multiple values
+                                mask = filtered_df[field].astype(str).str.lower().isin(filter_config["values"])
+                            else:
+                                # For numeric fields
+                                mask = filtered_df[field] == filter_config["value"]
                         elif filter_type == "date_range":
                             mask = (filtered_df[field].dt.date >= filter_config["start"]) & (filtered_df[field].dt.date <= filter_config["end"])
                         elif filter_type == "contains":
@@ -1432,7 +1454,12 @@ if df is not None:
                 elif filter_type == "greater_than":
                     st.sidebar.markdown(f"- **{field}**: Greater than {filter_config['value']}")
                 elif filter_type == "equals":
-                    st.sidebar.markdown(f"- **{field}**: Equals {filter_config['value']}")
+                    if isinstance(filter_config["values"], list):
+                        # Get the original case values for display
+                        display_values = [case_mapping.get(val, val) for val in filter_config["values"]]
+                        st.sidebar.markdown(f"- **{field}**: Equals any of {', '.join(display_values)}")
+                    else:
+                        st.sidebar.markdown(f"- **{field}**: Equals {filter_config['value']}")
                 elif filter_type == "date_range":
                     st.sidebar.markdown(f"- **{field}**: Between {filter_config['start']} and {filter_config['end']}")
                 elif filter_type == "contains":
