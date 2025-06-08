@@ -1108,9 +1108,176 @@ if 'active_filters' not in st.session_state:
 if 'filtered_data' not in st.session_state:
     st.session_state.filtered_data = None
 
+def read_csv_chunked(file, chunk_size=100000):
+    """Read CSV file in chunks with progress tracking"""
+    chunks = []
+    total_size = file.size
+    bytes_read = 0
+    
+    # Create progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Read file in chunks
+    for chunk in pd.read_csv(file, chunksize=chunk_size):
+        chunks.append(chunk)
+        bytes_read += chunk_size * chunk.shape[1] * 8  # Approximate bytes read
+        progress = min(bytes_read / total_size, 1.0)
+        progress_bar.progress(progress)
+        status_text.text(f"Reading data: {progress:.1%} complete")
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    return pd.concat(chunks, ignore_index=True)
+
+def read_excel_chunked(file, chunk_size=100000):
+    """Read Excel file in chunks with progress tracking"""
+    # Get total number of rows
+    xl = pd.ExcelFile(file)
+    total_rows = sum([len(pd.read_excel(xl, sheet_name=sheet)) for sheet in xl.sheet_names])
+    
+    # Create progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    chunks = []
+    for sheet in xl.sheet_names:
+        for chunk in pd.read_excel(xl, sheet_name=sheet, chunksize=chunk_size):
+            chunks.append(chunk)
+            progress = min(len(chunks) * chunk_size / total_rows, 1.0)
+            progress_bar.progress(progress)
+            status_text.text(f"Reading sheet {sheet}: {progress:.1%} complete")
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    return pd.concat(chunks, ignore_index=True)
+
+def read_json_chunked(file, chunk_size=100000):
+    """Read JSON file in chunks with progress tracking"""
+    # Create progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Read file content
+    content = file.read()
+    file.seek(0)  # Reset file pointer
+    
+    try:
+        # Try to parse as JSON first
+        json_data = json.loads(content)
+        
+        if isinstance(json_data, list):
+            # Process list of objects in chunks
+            chunks = []
+            total_items = len(json_data)
+            
+            for i in range(0, total_items, chunk_size):
+                chunk_data = json_data[i:i + chunk_size]
+                chunk_df = pd.DataFrame([flatten_json(item) for item in chunk_data])
+                chunks.append(chunk_df)
+                
+                progress = min((i + chunk_size) / total_items, 1.0)
+                progress_bar.progress(progress)
+                status_text.text(f"Processing JSON data: {progress:.1%} complete")
+            
+            df = pd.concat(chunks, ignore_index=True)
+        else:
+            # Single object - flatten and create DataFrame
+            flattened_data = flatten_json(json_data)
+            df = pd.DataFrame([flattened_data])
+            
+    except json.JSONDecodeError:
+        # If not valid JSON, try JSON Lines format
+        chunks = []
+        total_lines = content.count(b'\n')
+        processed_lines = 0
+        
+        for chunk in pd.read_json(file, lines=True, chunksize=chunk_size):
+            chunks.append(chunk)
+            processed_lines += chunk_size
+            progress = min(processed_lines / total_lines, 1.0)
+            progress_bar.progress(progress)
+            status_text.text(f"Processing JSON Lines: {progress:.1%} complete")
+        
+        df = pd.concat(chunks, ignore_index=True)
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    return df
+
+def read_xml_chunked(file, chunk_size=100000):
+    """Read XML file in chunks with progress tracking"""
+    # Create progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Read the XML file content
+    xml_content = file.read()
+    file.seek(0)  # Reset file pointer
+    
+    try:
+        # Parse XML
+        root = etree.fromstring(xml_content)
+        
+        # Get all elements at the first level that have children
+        records = []
+        total_elements = len(root)
+        processed_elements = 0
+        
+        for elem in root:
+            if len(elem) > 0:  # Element has children
+                record = {}
+                for child in elem:
+                    record[child.tag] = child.text
+                records.append(record)
+            else:
+                records.append({elem.tag: elem.text})
+            
+            processed_elements += 1
+            progress = processed_elements / total_elements
+            progress_bar.progress(progress)
+            status_text.text(f"Processing XML data: {progress:.1%} complete")
+            
+            # Process in chunks to manage memory
+            if len(records) >= chunk_size:
+                df_chunk = pd.DataFrame(records)
+                if 'df' not in locals():
+                    df = df_chunk
+                else:
+                    df = pd.concat([df, df_chunk], ignore_index=True)
+                records = []
+        
+        # Process remaining records
+        if records:
+            df_chunk = pd.DataFrame(records)
+            if 'df' not in locals():
+                df = df_chunk
+            else:
+                df = pd.concat([df, df_chunk], ignore_index=True)
+    
+    except Exception as e:
+        st.error(f"Error processing XML file: {str(e)}")
+        df = None
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    return df
+
 # File Upload Section
 st.markdown('<div id="upload-file"></div>', unsafe_allow_html=True)
 st.markdown("## 🗃️ Upload New File")
+
+# Initialize df as None
+df = None
+
 uploaded_file = st.file_uploader("Upload a CSV, Excel, JSON, or XML file", type=["csv", "xlsx", "json", "xml"])
 
 if uploaded_file is not None:
@@ -1125,134 +1292,27 @@ if 'uploaded_file' in st.session_state and st.session_state.uploaded_file is not
     # Reset the file pointer to the beginning
     uploaded_file.seek(0)
     
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    elif uploaded_file.name.endswith(".json"):
-        try:
-            # Try to read as JSON first
-            json_data = json.load(uploaded_file)
-            
-            # Function to flatten nested JSON structure
-            def flatten_json(data, parent_key='', sep='_'):
-                items = []
-                if isinstance(data, dict):
-                    for k, v in data.items():
-                        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                        if isinstance(v, (dict, list)):
-                            items.extend(flatten_json(v, new_key, sep=sep).items())
-                        else:
-                            items.append((new_key, v))
-                elif isinstance(data, list):
-                    for i, item in enumerate(data):
-                        new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
-                        if isinstance(item, (dict, list)):
-                            items.extend(flatten_json(item, new_key, sep=sep).items())
-                        else:
-                            items.append((new_key, item))
-                return dict(items)
-            
-            # If the JSON is a list of objects, process each object
-            if isinstance(json_data, list):
-                flattened_data = [flatten_json(item) for item in json_data]
-                df = pd.DataFrame(flattened_data)
-            else:
-                # If it's a single object, flatten it and create a single-row DataFrame
-                flattened_data = flatten_json(json_data)
-                df = pd.DataFrame([flattened_data])
-                
-        except Exception as e:
-            # If that fails, try to read as JSON lines
-            try:
-                # Reset file pointer again before trying JSON lines
-                uploaded_file.seek(0)
-                df = pd.read_json(uploaded_file, lines=True)
-            except Exception as e2:
-                st.error(f"Error reading JSON file: {str(e2)}")
-                st.info("Please ensure your JSON file is either a valid JSON array of objects or JSON Lines format.")
-                df = None
-    elif uploaded_file.name.endswith(".xml"):
-        try:
-            # Read the XML file content
-            xml_content = uploaded_file.read()
-            
-            # Reset file pointer for future reads
-            uploaded_file.seek(0)
-            
-            # Try to parse as XML
-            try:
-                # First attempt: Try to parse as a simple XML structure
-                root = etree.fromstring(xml_content)
-                
-                # Get all elements at the first level that have children
-                records = []
-                for elem in root:
-                    if len(elem) > 0:  # Element has children
-                        record = {}
-                        for child in elem:
-                            record[child.tag] = child.text
-                        records.append(record)
-                
-                if records:
-                    df = pd.DataFrame(records)
-                else:
-                    # If no nested structure found, try to parse as a flat structure
-                    records = []
-                    for elem in root:
-                        record = {elem.tag: elem.text}
-                        records.append(record)
-                    df = pd.DataFrame(records)
-                    
-            except Exception as e:
-                # Second attempt: Try using xmltodict for more complex XML structures
-                try:
-                    # Convert XML to dict
-                    xml_dict = xmltodict.parse(xml_content)
-                    
-                    # Function to flatten nested dictionary
-                    def flatten_dict(d, parent_key='', sep='_'):
-                        items = []
-                        for k, v in d.items():
-                            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                            if isinstance(v, dict):
-                                items.extend(flatten_dict(v, new_key, sep=sep).items())
-                            elif isinstance(v, list):
-                                # Handle lists by creating separate records
-                                for i, item in enumerate(v):
-                                    if isinstance(item, dict):
-                                        items.extend(flatten_dict(item, f"{new_key}_{i}", sep=sep).items())
-                                    else:
-                                        items.append((f"{new_key}_{i}", item))
-                            else:
-                                items.append((new_key, v))
-                        return dict(items)
-                    
-                    # Flatten the dictionary
-                    flat_dict = flatten_dict(xml_dict)
-                    
-                    # Convert to DataFrame
-                    if isinstance(flat_dict, dict):
-                        df = pd.DataFrame([flat_dict])
-                    else:
-                        df = pd.DataFrame(flat_dict)
-                        
-                except Exception as e2:
-                    st.error(f"Error reading XML file: {str(e2)}")
-                    st.info("""
-                    Please ensure your XML file is in one of these formats:
-                    1. Simple XML with repeating elements (e.g., <root><item><field>value</field></item></root>)
-                    2. Complex XML with nested structures (will be flattened)
-                    """)
-                    df = None
-                    
-        except Exception as e:
-            st.error(f"Error processing XML file: {str(e)}")
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = read_csv_chunked(uploaded_file)
+        elif uploaded_file.name.endswith(".json"):
+            df = read_json_chunked(uploaded_file)
+        elif uploaded_file.name.endswith(".xml"):
+            df = read_xml_chunked(uploaded_file)
+        else:
+            df = read_excel_chunked(uploaded_file)
+        
+        if df is not None:
+            # Store the dataframe in session state
+            st.session_state.df = df
+            st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
+        else:
+            st.error("❌ Failed to load data from file.")
             df = None
-    else:
-        df = pd.read_excel(uploaded_file)
-    
-    # Store the dataframe in session state
-    st.session_state.df = df
-    st.success(f"✅ Loaded **{df.shape[0]}** records with **{df.shape[1]}** fields.")
+            
+    except Exception as e:
+        st.error(f"Error reading file: {str(e)}")
+        df = None
 elif "df" in st.session_state:
     df = st.session_state.df
     st.info("ℹ️ Using data loaded from session file.")
@@ -1260,8 +1320,9 @@ else:
     df = None
     st.info("📂 Please upload a file to begin analysis.")
 
-# Create a form for filter selections
+# Only proceed with data analysis if we have a valid dataframe
 if df is not None:
+    # Create a form for filter selections
     with st.sidebar.form(key="filter_form"):
         st.markdown("### 🔍 Data Filters")
         
