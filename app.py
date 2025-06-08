@@ -1224,25 +1224,139 @@ if df is not None:
         # Create filter widgets for each selected field
         for field in filter_fields:
             try:
-                # Get available values from the original dataframe
-                non_null_mask = df[field].notna()
-                available_values = df.loc[non_null_mask, field].astype(str)
-                available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
-                available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
+                # Get the data type of the field
+                dtype = df[field].dtype
+                is_numeric = pd.api.types.is_numeric_dtype(dtype)
+                is_datetime = pd.api.types.is_datetime64_any_dtype(dtype)
                 
-                # Get current selected values for this field
-                current_selected = [v for v in st.session_state.active_filters.get(field, []) if str(v) in available_values]
-                
-                # Create a multi-select widget for each field
-                selected_values = st.multiselect(
-                    f"Filter {field}",
-                    options=available_values,
-                    default=current_selected,
-                    key=f"filter_{field}"
-                )
-                
-                if selected_values:
-                    filter_selections[field] = selected_values
+                # Create a container for the field's filters
+                with st.container():
+                    st.markdown(f"**{field}**")
+                    
+                    if is_numeric:
+                        # Numeric field filters
+                        filter_type = st.selectbox(
+                            f"Filter type for {field}",
+                            options=["Range", "Less than", "Greater than", "Equals"],
+                            key=f"filter_type_{field}"
+                        )
+                        
+                        if filter_type == "Range":
+                            min_val = float(df[field].min())
+                            max_val = float(df[field].max())
+                            range_values = st.slider(
+                                f"Select range for {field}",
+                                min_value=min_val,
+                                max_value=max_val,
+                                value=(min_val, max_val),
+                                key=f"range_{field}"
+                            )
+                            filter_selections[field] = {
+                                "type": "range",
+                                "min": range_values[0],
+                                "max": range_values[1]
+                            }
+                        elif filter_type == "Less than":
+                            max_val = float(df[field].max())
+                            value = st.number_input(
+                                f"Less than value for {field}",
+                                value=float(max_val),
+                                key=f"less_than_{field}"
+                            )
+                            filter_selections[field] = {
+                                "type": "less_than",
+                                "value": value
+                            }
+                        elif filter_type == "Greater than":
+                            min_val = float(df[field].min())
+                            value = st.number_input(
+                                f"Greater than value for {field}",
+                                value=float(min_val),
+                                key=f"greater_than_{field}"
+                            )
+                            filter_selections[field] = {
+                                "type": "greater_than",
+                                "value": value
+                            }
+                        else:  # Equals
+                            value = st.number_input(
+                                f"Equals value for {field}",
+                                value=float(df[field].iloc[0]) if len(df) > 0 else 0,
+                                key=f"equals_{field}"
+                            )
+                            filter_selections[field] = {
+                                "type": "equals",
+                                "value": value
+                            }
+                            
+                    elif is_datetime:
+                        # Date field filters
+                        min_date = df[field].min().date()
+                        max_date = df[field].max().date()
+                        date_range = st.date_input(
+                            f"Select date range for {field}",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                            key=f"date_range_{field}"
+                        )
+                        if len(date_range) == 2:
+                            filter_selections[field] = {
+                                "type": "date_range",
+                                "start": date_range[0],
+                                "end": date_range[1]
+                            }
+                            
+                    else:
+                        # String field filters
+                        filter_type = st.selectbox(
+                            f"Filter type for {field}",
+                            options=["Contains", "Starts with", "Regex", "Equals"],
+                            key=f"filter_type_{field}"
+                        )
+                        
+                        if filter_type == "Contains":
+                            value = st.text_input(
+                                f"Contains text for {field}",
+                                key=f"contains_{field}"
+                            )
+                            if value:
+                                filter_selections[field] = {
+                                    "type": "contains",
+                                    "value": value.lower()
+                                }
+                        elif filter_type == "Starts with":
+                            value = st.text_input(
+                                f"Starts with text for {field}",
+                                key=f"starts_with_{field}"
+                            )
+                            if value:
+                                filter_selections[field] = {
+                                    "type": "starts_with",
+                                    "value": value.lower()
+                                }
+                        elif filter_type == "Regex":
+                            value = st.text_input(
+                                f"Regex pattern for {field}",
+                                key=f"regex_{field}"
+                            )
+                            if value:
+                                filter_selections[field] = {
+                                    "type": "regex",
+                                    "value": value.lower()
+                                }
+                        else:  # Equals
+                            # Get unique values for the field
+                            unique_values = sorted(df[field].dropna().unique())
+                            value = st.selectbox(
+                                f"Equals value for {field}",
+                                options=unique_values,
+                                key=f"equals_{field}"
+                            )
+                            filter_selections[field] = {
+                                "type": "equals",
+                                "value": value.lower() if isinstance(value, str) else value
+                            }
                     
             except Exception as e:
                 st.error(f"Error processing field {field}: {str(e)}")
@@ -1259,11 +1373,27 @@ if df is not None:
         if apply_filters:
             if filter_selections:
                 filtered_df = df.copy()
-                for field, values in filter_selections.items():
+                for field, filter_config in filter_selections.items():
                     try:
-                        non_null_mask = filtered_df[field].notna()
-                        filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
-                        mask = filtered_df[field].isin([str(v) for v in values])
+                        filter_type = filter_config["type"]
+                        
+                        if filter_type == "range":
+                            mask = (filtered_df[field] >= filter_config["min"]) & (filtered_df[field] <= filter_config["max"])
+                        elif filter_type == "less_than":
+                            mask = filtered_df[field] < filter_config["value"]
+                        elif filter_type == "greater_than":
+                            mask = filtered_df[field] > filter_config["value"]
+                        elif filter_type == "equals":
+                            mask = filtered_df[field].astype(str).str.lower() == (filter_config["value"].lower() if isinstance(filter_config["value"], str) else filter_config["value"])
+                        elif filter_type == "date_range":
+                            mask = (filtered_df[field].dt.date >= filter_config["start"]) & (filtered_df[field].dt.date <= filter_config["end"])
+                        elif filter_type == "contains":
+                            mask = filtered_df[field].astype(str).str.lower().str.contains(filter_config["value"], na=False)
+                        elif filter_type == "starts_with":
+                            mask = filtered_df[field].astype(str).str.lower().str.startswith(filter_config["value"], na=False)
+                        elif filter_type == "regex":
+                            mask = filtered_df[field].astype(str).str.lower().str.contains(filter_config["value"], regex=True, na=False)
+                        
                         filtered_df = filtered_df[mask]
                     except Exception as e:
                         st.error(f"Error filtering field {field}: {str(e)}")
@@ -1292,18 +1422,25 @@ if df is not None:
     if st.session_state.active_filters:
         st.sidebar.markdown("---")
         st.sidebar.markdown("#### Active Filters:")
-        for field, values in st.session_state.active_filters.items():
+        for field, filter_config in st.session_state.active_filters.items():
             try:
-                display_values = []
-                for v in values:
-                    try:
-                        if pd.isna(v):
-                            continue
-                        display_values.append(str(v))
-                    except:
-                        continue
-                if display_values:
-                    st.sidebar.markdown(f"- **{field}**: {', '.join(display_values)}")
+                filter_type = filter_config["type"]
+                if filter_type == "range":
+                    st.sidebar.markdown(f"- **{field}**: Between {filter_config['min']} and {filter_config['max']}")
+                elif filter_type == "less_than":
+                    st.sidebar.markdown(f"- **{field}**: Less than {filter_config['value']}")
+                elif filter_type == "greater_than":
+                    st.sidebar.markdown(f"- **{field}**: Greater than {filter_config['value']}")
+                elif filter_type == "equals":
+                    st.sidebar.markdown(f"- **{field}**: Equals {filter_config['value']}")
+                elif filter_type == "date_range":
+                    st.sidebar.markdown(f"- **{field}**: Between {filter_config['start']} and {filter_config['end']}")
+                elif filter_type == "contains":
+                    st.sidebar.markdown(f"- **{field}**: Contains '{filter_config['value']}'")
+                elif filter_type == "starts_with":
+                    st.sidebar.markdown(f"- **{field}**: Starts with '{filter_config['value']}'")
+                elif filter_type == "regex":
+                    st.sidebar.markdown(f"- **{field}**: Matches regex '{filter_config['value']}'")
             except Exception as e:
                 st.sidebar.error(f"Error displaying filter for {field}")
     
