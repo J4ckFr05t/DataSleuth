@@ -1230,25 +1230,108 @@ if df is not None:
         # Create filter widgets for each selected field
         for field in filter_fields:
             try:
-                # Get available values from the original dataframe
-                non_null_mask = df[field].notna()
-                available_values = df.loc[non_null_mask, field].astype(str)
-                available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
-                available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
+                # Get field type
+                field_type = simplify_dtype(df[field].dtype)
                 
-                # Get current selected values for this field
-                current_selected = [v for v in st.session_state.active_filters.get(field, []) if str(v) in available_values]
-                
-                # Create a multi-select widget for each field
-                selected_values = st.multiselect(
-                    f"Filter {field}",
-                    options=available_values,
-                    default=current_selected,
-                    key=f"filter_{field}"
-                )
-                
-                if selected_values:
-                    filter_selections[field] = selected_values
+                # Create a container for this field's filters
+                with st.container():
+                    st.markdown(f"**{field}**")
+                    
+                    if field_type in ['string']:
+                        # String field filtering options
+                        filter_type = st.selectbox(
+                            f"Filter type for {field}",
+                            options=["Contains", "Starts with", "Regex", "Equals"],
+                            key=f"filter_type_{field}"
+                        )
+                        
+                        if filter_type == "Equals":
+                            # Get available values for equals filter
+                            non_null_mask = df[field].notna()
+                            available_values = df.loc[non_null_mask, field].astype(str)
+                            available_values = available_values[~available_values.str.lower().isin(['nan', 'none', ''])]
+                            available_values = sorted(available_values.unique(), key=lambda x: str(x).lower())
+                            
+                            selected_values = st.multiselect(
+                                f"Select values for {field}",
+                                options=available_values,
+                                key=f"filter_{field}"
+                            )
+                            
+                            if selected_values:
+                                filter_selections[field] = {
+                                    'type': 'equals',
+                                    'values': selected_values
+                                }
+                        else:
+                            # Text input for other string filters
+                            filter_value = st.text_input(
+                                f"Enter value for {filter_type.lower()} filter",
+                                key=f"filter_value_{field}"
+                            )
+                            
+                            if filter_value:
+                                filter_selections[field] = {
+                                    'type': filter_type.lower().replace(' ', '_'),
+                                    'value': filter_value.lower()
+                                }
+                    
+                    elif field_type in ['int', 'float']:
+                        # Numeric field filtering options
+                        filter_type = st.selectbox(
+                            f"Filter type for {field}",
+                            options=["Range", "Less than", "Greater than", "Equals"],
+                            key=f"filter_type_{field}"
+                        )
+                        
+                        if filter_type == "Range":
+                            min_val = float(df[field].min())
+                            max_val = float(df[field].max())
+                            
+                            # Use a slider for range selection
+                            range_values = st.slider(
+                                f"Select range for {field}",
+                                min_value=min_val,
+                                max_value=max_val,
+                                value=(min_val, max_val),
+                                key=f"range_{field}"
+                            )
+                            
+                            if range_values[0] != min_val or range_values[1] != max_val:
+                                filter_selections[field] = {
+                                    'type': 'range',
+                                    'min': range_values[0],
+                                    'max': range_values[1]
+                                }
+                        
+                        elif filter_type == "Equals":
+                            # Get available values for equals filter
+                            non_null_mask = df[field].notna()
+                            available_values = sorted(df.loc[non_null_mask, field].unique())
+                            
+                            selected_values = st.multiselect(
+                                f"Select values for {field}",
+                                options=available_values,
+                                key=f"filter_{field}"
+                            )
+                            
+                            if selected_values:
+                                filter_selections[field] = {
+                                    'type': 'equals',
+                                    'values': selected_values
+                                }
+                        
+                        else:  # Less than or Greater than
+                            value = st.number_input(
+                                f"Enter value for {filter_type.lower()} filter",
+                                value=float(df[field].mean()),
+                                key=f"filter_value_{field}"
+                            )
+                            
+                            filter_selections[field] = {
+                                'type': filter_type.lower().replace(' ', '_'),
+                                'value': value
+                            }
                     
             except Exception as e:
                 st.error(f"Error processing field {field}: {str(e)}")
@@ -1265,11 +1348,23 @@ if df is not None:
         if apply_filters:
             if filter_selections:
                 filtered_df = df.copy()
-                for field, values in filter_selections.items():
+                for field, filter_config in filter_selections.items():
                     try:
-                        non_null_mask = filtered_df[field].notna()
-                        filtered_df.loc[non_null_mask, field] = filtered_df.loc[non_null_mask, field].astype(str)
-                        mask = filtered_df[field].isin([str(v) for v in values])
+                        if filter_config['type'] == 'equals':
+                            mask = filtered_df[field].isin(filter_config['values'])
+                        elif filter_config['type'] == 'contains':
+                            mask = filtered_df[field].astype(str).str.lower().str.contains(filter_config['value'], na=False)
+                        elif filter_config['type'] == 'starts_with':
+                            mask = filtered_df[field].astype(str).str.lower().str.startswith(filter_config['value'], na=False)
+                        elif filter_config['type'] == 'regex':
+                            mask = filtered_df[field].astype(str).str.lower().str.match(filter_config['value'], na=False)
+                        elif filter_config['type'] == 'range':
+                            mask = (filtered_df[field] >= filter_config['min']) & (filtered_df[field] <= filter_config['max'])
+                        elif filter_config['type'] == 'less_than':
+                            mask = filtered_df[field] < filter_config['value']
+                        elif filter_config['type'] == 'greater_than':
+                            mask = filtered_df[field] > filter_config['value']
+                        
                         filtered_df = filtered_df[mask]
                     except Exception as e:
                         st.error(f"Error filtering field {field}: {str(e)}")
@@ -1298,18 +1393,23 @@ if df is not None:
     if st.session_state.active_filters:
         st.sidebar.markdown("---")
         st.sidebar.markdown("#### Active Filters:")
-        for field, values in st.session_state.active_filters.items():
+        for field, filter_config in st.session_state.active_filters.items():
             try:
-                display_values = []
-                for v in values:
-                    try:
-                        if pd.isna(v):
-                            continue
-                        display_values.append(str(v))
-                    except:
-                        continue
-                if display_values:
-                    st.sidebar.markdown(f"- **{field}**: {', '.join(display_values)}")
+                if filter_config['type'] == 'equals':
+                    display_values = [str(v) for v in filter_config['values']]
+                    st.sidebar.markdown(f"- **{field}**: Equals {', '.join(display_values)}")
+                elif filter_config['type'] == 'contains':
+                    st.sidebar.markdown(f"- **{field}**: Contains '{filter_config['value']}'")
+                elif filter_config['type'] == 'starts_with':
+                    st.sidebar.markdown(f"- **{field}**: Starts with '{filter_config['value']}'")
+                elif filter_config['type'] == 'regex':
+                    st.sidebar.markdown(f"- **{field}**: Matches regex '{filter_config['value']}'")
+                elif filter_config['type'] == 'range':
+                    st.sidebar.markdown(f"- **{field}**: Between {filter_config['min']} and {filter_config['max']}")
+                elif filter_config['type'] == 'less_than':
+                    st.sidebar.markdown(f"- **{field}**: Less than {filter_config['value']}")
+                elif filter_config['type'] == 'greater_than':
+                    st.sidebar.markdown(f"- **{field}**: Greater than {filter_config['value']}")
             except Exception as e:
                 st.sidebar.error(f"Error displaying filter for {field}")
     
@@ -2308,15 +2408,23 @@ if df is not None:
                     
                     # Find optimal k using silhouette score
                     silhouette_scores = []
-                    K = range(2, min(11, len(X)))
-                    for k in K:
-                        kmeans = KMeans(n_clusters=k, random_state=42)
-                        labels = kmeans.fit_predict(X_scaled)
-                        if len(np.unique(labels)) > 1:  # Ensure we have at least 2 clusters
-                            score = silhouette_score(X_scaled, labels)
-                            silhouette_scores.append(score)
+                    # Ensure we have enough samples for clustering
+                    max_k = min(10, len(X) - 1)  # Maximum k should be less than number of samples
+                    K = range(2, max_k + 1)
                     
-                    optimal_k = K[np.argmax(silhouette_scores)] if silhouette_scores else 3
+                    for k in K:
+                        if k < len(X):  # Only try k if we have enough samples
+                            kmeans = KMeans(n_clusters=k, random_state=42)
+                            labels = kmeans.fit_predict(X_scaled)
+                            if len(np.unique(labels)) > 1:  # Ensure we have at least 2 clusters
+                                score = silhouette_score(X_scaled, labels)
+                                silhouette_scores.append(score)
+                    
+                    # If we couldn't find any valid silhouette scores, use a default k
+                    if not silhouette_scores:
+                        optimal_k = min(3, len(X) - 1)  # Use 3 clusters or less if not enough samples
+                    else:
+                        optimal_k = K[np.argmax(silhouette_scores)]
                     
                     # Run k-means with optimal k
                     kmeans = KMeans(n_clusters=optimal_k, random_state=42)
