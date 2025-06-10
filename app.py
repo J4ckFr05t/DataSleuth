@@ -1156,6 +1156,23 @@ def read_excel_chunked(file, chunk_size=100000):
     
     return pd.concat(chunks, ignore_index=True)
 
+def flatten_json(nested_json, prefix=''):
+    """Flatten a nested JSON object into a flat dictionary with dot notation keys."""
+    flattened = {}
+    
+    for key, value in nested_json.items():
+        new_key = f"{prefix}.{key}" if prefix else key
+        
+        if isinstance(value, dict):
+            flattened.update(flatten_json(value, new_key))
+        elif isinstance(value, list):
+            # Handle lists by joining elements with a separator
+            flattened[new_key] = '|'.join(str(item) for item in value)
+        else:
+            flattened[new_key] = value
+            
+    return flattened
+
 def read_json_chunked(file, chunk_size=100000):
     """Read JSON file in chunks with progress tracking"""
     # Create progress bar
@@ -1772,7 +1789,7 @@ if df is not None:
                         except Exception as e:
                             st.warning(f"Could not calculate unique primary keys: {str(e)}")
                     
-                    st.line_chart(chart_df)
+                    st.line_chart(chart_df, use_container_width=True)
                 
                 # Display wordcloud if available
                 if 'wordcloud_text' in insights:
@@ -1798,11 +1815,11 @@ if df is not None:
                         st.altair_chart(chart, use_container_width=True)
                     elif chart_type == 'donut_chart':
                         fig = render_donut_chart(chart_df, 'Occurrences', selected_field, "Value Distribution (All Records)")
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_{selected_field}")
                     elif chart_type == 'donut_chart_pk':
                         fig = render_donut_chart(chart_df, 'Occurrences', selected_field, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
                         st.markdown("#### Value Distribution (Per Primary Key)")
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_pk_{selected_field}")
                     elif chart_type == 'histogram':
                         hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
                             alt.X(f"{selected_field}:Q", bin=alt.Bin(maxbins=30), title=selected_field),
@@ -1973,7 +1990,7 @@ if df is not None:
                             except Exception as e:
                                 st.warning(f"Could not calculate unique primary keys: {str(e)}")
                         
-                        st.line_chart(chart_df)
+                        st.line_chart(chart_df, use_container_width=True)
                         continue
                     
                     # Display wordcloud if available
@@ -2000,11 +2017,11 @@ if df is not None:
                             st.altair_chart(chart, use_container_width=True)
                         elif chart_type == 'donut_chart':
                             fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_{col}")
                         elif chart_type == 'donut_chart_pk':
                             fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
                             st.markdown("#### Value Distribution (Per Primary Key)")
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_pk_{col}")
                         elif chart_type == 'histogram':
                             hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
                                 alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
@@ -2361,7 +2378,7 @@ if df is not None:
                         showlegend=True
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"plotly_zscore_{selected_col}")
 
                 with col2:
                     st.markdown("#### 📊 Box Plot with IQR Outliers")
@@ -2383,7 +2400,7 @@ if df is not None:
                         showlegend=False
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"plotly_box_{selected_col}")
 
                 # Display outlier details
                 st.markdown("#### 📋 Outlier Details")
@@ -2689,7 +2706,7 @@ if df is not None:
                                 showlegend=True
                             )
                             
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key=f"plotly_2d_{method}_{x_col}_{y_col}")
 
                     else:  # 3D Scatter Plot
                         # Select columns for 3D plot
@@ -2737,7 +2754,7 @@ if df is not None:
                                 showlegend=True
                             )
                             
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key=f"plotly_3d_{method}_{x_col}_{y_col}_{z_col}")
 
                     # Export results
                     with st.expander("📤 Export Results"):
