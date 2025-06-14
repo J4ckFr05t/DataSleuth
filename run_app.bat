@@ -73,7 +73,7 @@ if errorlevel 1 (
 
 :: Step 4: Launch Streamlit app
 %PS_OUT% '[*] Launching Streamlit app...' -ForegroundColor Yellow
-%PYTHON% -m streamlit run app.py
+%PYTHON% -m streamlit run Home.py
 
 pause
 endlocal

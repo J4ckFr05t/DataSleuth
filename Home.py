@@ -15,7 +15,7 @@ from lxml import etree
 import xmltodict
 import multiprocessing
 from functools import partial
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from column_processor import process_single_column
 import plotly.express as px
@@ -1675,7 +1675,7 @@ if df is not None:
         # Process the selected field if not already processed
         if selected_field not in st.session_state.processed_fields:
             st.info(f"Processing field: {selected_field}...")
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 process_func = partial(process_single_column, 
                                      total_records=len(df),
                                      primary_keys=primary_keys if 'primary_keys' in locals() else None,
@@ -1859,7 +1859,7 @@ if df is not None:
             fields_to_process = [col for col in current_batch if col not in st.session_state.processed_fields]
             if fields_to_process:
                 st.info(f"Processing {len(fields_to_process)} fields in current batch...")
-                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     # Create a partial function with the common arguments
                     process_func = partial(process_single_column, 
                                          total_records=len(df),
@@ -2132,7 +2132,7 @@ if df is not None:
         pattern_status = st.empty()
 
         # Process patterns in parallel
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
             pattern_futures = {
                 executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
                 for col in df.columns
@@ -2217,7 +2217,7 @@ if df is not None:
             outlier_status = st.empty()
 
             # Process outliers in parallel
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 outlier_futures = {}
                 for col in numerical_cols:
                     # Skip columns with too many nulls or all same values
@@ -2794,7 +2794,7 @@ if df is not None:
             extraction_status = st.empty()
 
             # Process extractions in parallel
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 extraction_futures = {
                     executor.submit(
                         process_extraction_parallel,
@@ -3008,7 +3008,7 @@ if df is not None:
                 st.subheader(f"🔍 Extraction Summary for `{category_name}`")
 
                 # Process custom extractions in parallel
-                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     custom_futures = {
                         executor.submit(
                             process_custom_extraction_parallel,
