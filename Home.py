@@ -927,11 +927,7 @@ with st.expander("🔌 Database Connection Options", expanded=False):
 
 # Add logo to sidebar
 st.sidebar.image("static/logo.png", use_container_width=False, width=250)
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    '<a href="https://j4ckfr0st.gitbook.io/datasleuth/" target="_blank" style="display: block; text-align: center; padding: 10px; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; border: 1px solid; border-image: linear-gradient(45deg, #4CAF50, #2196F3) 1; transition: all 0.3s ease; hover: background-color: rgba(76, 175, 80, 0.1);">📚 Help & Instructions</a>',
-    unsafe_allow_html=True
-)
+
 st.sidebar.markdown("---")
 
 def create_toc():

@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(
     page_title="Raw Data - DataSleuth",
-    page_icon="📊",
+    page_icon="static/favicon_io/favicon-32x32.png",
     layout="wide"
 )
 
@@ -99,22 +99,63 @@ else:
             except Exception as e:
                 st.sidebar.error(f"Error displaying filter for {field}")
     
-    # Display the data
+    # Add column selector
     st.markdown("### 📋 Data Preview")
-    st.dataframe(
-        df,
-        use_container_width=True,
-        height=600
-    )
+    st.markdown("Select the columns you want to display:")
+    
+    # Get all column names
+    all_columns = df.columns.tolist()
+    
+    # Initialize session state for select all if not exists
+    if 'select_all' not in st.session_state:
+        st.session_state.select_all = False
+    
+    # Callback function for select all button
+    def select_all_callback():
+        st.session_state.select_all = True
+        st.session_state.column_selector = all_columns
+    
+    # Create two columns for the selector and button
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        # Add column selector with all columns selected by default
+        selected_columns = st.multiselect(
+            "Choose columns to display",
+            options=all_columns,
+            default=all_columns,
+            key="column_selector"
+        )
+    
+    with col2:
+        # Add Select All button with proper alignment
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some vertical spacing
+        if st.button("Select All", key="select_all_btn", on_click=select_all_callback):
+            pass
+    
+    # Reset select_all state after processing
+    if st.session_state.select_all:
+        st.session_state.select_all = False
+    
+    # Display the data with selected columns
+    if selected_columns:
+        st.dataframe(
+            df[selected_columns],
+            use_container_width=True,
+            height=600
+        )
+    else:
+        st.warning("Please select at least one column to display.")
     
     # Add export option
     st.markdown("### 📤 Export Option")
     # CSV Export
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "📥 Download as CSV",
-        csv,
-        "raw_data.csv",
-        "text/csv",
-        key='download-csv'
-    ) 
+    if selected_columns:
+        csv = df[selected_columns].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download as CSV",
+            csv,
+            "raw_data.csv",
+            "text/csv",
+            key='download-csv'
+        ) 

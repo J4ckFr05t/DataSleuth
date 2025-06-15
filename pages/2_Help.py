@@ -2,122 +2,132 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Help - DataSleuth",
-    page_icon="❓",
+    page_icon="static/favicon_io/favicon-32x32.png",
     layout="wide"
 )
 
 st.title("❓ Help & Documentation")
 
+# Introduction
+st.header("Welcome to DataSleuth")
 st.markdown("""
-This section provides guidance on how to use DataSleuth effectively — from loading data to performing advanced analysis and saving sessions.
+This guide will help you understand how to use DataSleuth effectively for your data analysis needs. 
+From loading data to performing advanced analysis and saving sessions, we've got you covered.
+""")
 
-📂 Loading Data
-You can begin analysis by:
+# Data Loading Section
+st.header("📂 Loading Data")
+st.markdown("""
+### Getting Started
+You can begin your analysis in two ways:
+- Upload a file (supports CSV, JSON, or XML formats)
+- Connect to a database (currently supports Spark Thrift Server)
 
-Uploading a file in CSV, JSON, or XML format
+### Database Connection Guide
+1. **Create a Connection Profile**
+   - Enter IP, port, and authentication details
+   - Save the profile for future use
+2. **Query the Saved Profile**
+   - Use the saved profile to execute SQL queries
+   - Fetch your data using the established connection
 
-Or connecting to a database (currently only Spark Thrift Server is supported)
+> ⚠️ **Important Note**: Always refresh the app before loading a new dataset to prevent unexpected behavior.
+""")
 
-🔌 Database Connection Instructions
-To load data from a database:
+# Table of Contents
+st.header("📑 Table of Contents")
+st.markdown("""
+After uploading your data:
+1. Click the "Refresh TOC" button
+2. This generates an accurate and updated Table of Contents
+3. Ensures all fields and insights are properly indexed
+""")
 
-Create a Connection Profile
+# Extraction Features
+st.header("🧠 Data Extraction")
+st.markdown("""
+### Built-in Extraction
+- Enabled by default for each session
+- Customizable from the sidebar
+- Changes apply only to the current session
 
-Enter IP, port, and authentication details
+### Custom Extraction
+Create custom rules in the "Add Custom Extraction" section:
+1. Provide a name for the extraction
+2. Enter comma-separated values to extract
+3. Perfect for tagging business terms, categories, or patterns
+""")
 
-Save this profile for future use
+# Primary Key
+st.header("🔑 Primary Key Management")
+st.markdown("""
+- Primary keys are automatically identified during data load
+- Manual changes possible in the Primary Key Identification section
+- If no valid key is found/selected, each record is treated as unique
+""")
 
-Query the Saved Profile
+# Field Insights
+st.header("🔍 Field Insights")
+st.markdown("""
+### Performance Optimization
+For large datasets, you can:
+- Paginate through fields
+- Select specific fields for inspection
+- This ensures faster rendering and targeted exploration
+""")
 
-After saving, provide a SQL query to fetch the data using that profile
+# Computation Features
+st.header("⚡ Trigger-Based Computation")
+st.markdown("""
+The following modules run only when explicitly triggered:
+- Pattern Detection
+- Outlier Detection
+- Advanced Outlier Detection
+- Built-in Extraction Insights
+- Custom Extraction Insights
 
-⚠️ Important:
-If you want to load a new dataset, refresh the app before uploading or connecting. Skipping this may cause unexpected behavior.
+> This design prevents unnecessary computations and improves performance on large datasets.
+""")
 
-📑 Table of Contents (TOC)
-After uploading data, click the Refresh TOC button to generate an accurate and updated Table of Contents. This ensures all fields and insights are correctly indexed.
+# Session Management
+st.header("💾 Session Management")
+st.markdown("""
+### Saving Sessions
+1. Click "Save Session" to store current analysis
+2. Sessions are saved in the DataSleuth/EDA_Reports directory
+3. Use "Load Previous Session" from the top menu to resume work
+""")
 
-🧠 Extraction Settings
-✅ Built-in Extraction
-Enabled by default for each session. You can change or disable these from the sidebar.
-Changes apply only to the current session.
+# Advanced Filtering
+st.header("🎯 Advanced Filtering")
+st.markdown("""
+### Available Filter Types
+#### Text Fields
+- Equals
+- Contains
+- Regex
+- Starts With
 
-✍️ Custom Extraction
-Custom rules can be created in the "Add Custom Extraction" section:
+#### Numeric Fields (Integer/Float)
+- Less Than
+- Greater Than
+- Range
 
-Provide a name for the extraction
+### How to Apply Filters
+1. Select fields to filter on
+2. Click "Apply Filters" to enable filtering mode
+3. Choose filter type for each selected field
+4. Enter filter values
+5. Click "Apply Filters" again to execute
+""")
 
-Enter comma-separated values to be extracted
+# About Developer
+st.header("👨‍💻 About Developer")
+st.markdown("""
+DataSleuth is developed and maintained by Jibin George.
 
-These are useful for tagging business terms, categories, or patterns of interest
+- GitHub: [@J4ckFr05t/DataSleuth](https://github.com/J4ckFr05t/DataSleuth)
+- Website: [jibingeorge.org](https://jibingeorge.org)
 
-🔑 Primary Key Identification
-A primary key is auto-identified during data load
-
-You can manually change the primary key in the Primary Key Identification section
-
-If no valid key is found or selected, DataSleuth will assume each record is unique
-
-🔍 Per Field Insights
-To optimize performance on large datasets:
-
-You can paginate through fields
-
-Or select only specific fields to inspect
-
-This ensures faster rendering and targeted exploration.
-
-⚡ Trigger-Based Computation
-The following modules only run when explicitly triggered using their respective "Run" buttons:
-
-Pattern Detection
-
-Outlier Detection
-
-Advanced Outlier Detection
-
-Built-in Extraction Insights
-
-Custom Extraction Insights
-
-This design prevents unnecessary computations and improves performance on large datasets.
-
-💾 Saving & Loading Sessions
-Click "Save Session" to store the current analysis
-
-Sessions are saved inside the DataSleuth/EDA_Reports directory
-
-To resume work later, use "Load Previous Session" from the top menu
-
-🎯 Advanced Filtering
-DataSleuth provides robust, field-specific filtering:
-
-Text Fields:
-
-Equals
-
-Contains
-
-Regex
-
-Starts With
-
-Numeric Fields (Integer/Float):
-
-Less Than
-
-Greater Than
-
-Range
-
-🔁 How to Apply Filters:
-Select the fields you want to filter on
-
-Click "Apply Filters" to enable filtering mode
-
-Choose filter type for each selected field
-
-Enter filter values
-
-Click "Apply Filters" again to execute
+Feel free to contribute to the project or report any issues on GitHub!
 """) 
