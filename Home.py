@@ -1641,14 +1641,18 @@ if df is not None:
     st.markdown("### Field Selection")
     view_mode = st.radio(
         "Choose how to view field insights:",
-        ["View All Fields (Paginated)", "Select Specific Field"],
+        ["View All Fields (Paginated)", "View All Fields (No Pagination)", "Select Specific Field"],
         horizontal=True,
         key="view_mode_radio",
-        index=0 if st.session_state.view_mode == "View All Fields (Paginated)" else 1
+        index=0 if st.session_state.view_mode == "View All Fields (Paginated)" else 1 if st.session_state.view_mode == "View All Fields (No Pagination)" else 2
     )
     
     # Update session state view mode
     st.session_state.view_mode = view_mode
+
+    # Add warning for No Pagination mode
+    if view_mode == "View All Fields (No Pagination)":
+        st.warning("⚠️ **Not Recommended**: This mode may be slow and resource-intensive for datasets with many fields. Consider using paginated view for better performance.")
 
     if view_mode == "Select Specific Field":
         # If we have a previously selected field and it still exists in the filtered data, use it
@@ -1734,58 +1738,29 @@ if df is not None:
                         '__datetime__': parsed_col[valid_datetime_mask]
                     }, index=original_indices)
                     
-                    if not show_all_dates:
-                        min_date = parsed_col.min().date()
-                        max_date = parsed_col.max().date()
-                        start_date, end_date = st.date_input(
-                            f"Select date range for `{selected_field}`",
-                            value=(min_date, max_date),
-                            min_value=min_date,
-                            max_value=max_date,
-                            key=f"range_{selected_field}"
+                    # Process datetime data
+                    if not datetime_df.empty:
+                        # Resample data based on selected frequency
+                        resampled = datetime_df.resample(freq_map[freq], on='__datetime__').size().reset_index()
+                        resampled.columns = ['Date', 'Count']
+                        
+                        # Create the trend chart
+                        trend_chart = alt.Chart(resampled).mark_line(point=True).encode(
+                            x=alt.X('Date:T', title='Date'),
+                            y=alt.Y('Count:Q', title='Count'),
+                            tooltip=['Date:T', 'Count:Q']
+                        ).properties(
+                            width=600,
+                            height=300,
+                            title=f"Trend Analysis ({freq})"
                         )
                         
-                        # Filter the datetime DataFrame using boolean indexing
-                        date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
-                                  (datetime_df['__datetime__'].dt.date <= end_date)
-                        filtered_df = datetime_df[date_mask].copy()
-                    else:
-                        filtered_df = datetime_df.copy()
-                    
-                    # Resample and count records
-                    resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
-                    record_counts = resampled.size().rename("Total Records")
-                    chart_df = pd.DataFrame(record_counts)
-                    
-                    if primary_keys:
-                        try:
-                            # Create a DataFrame with primary keys and datetime
-                            pk_datetime_df = pd.DataFrame({
-                                '__datetime__': filtered_df['__datetime__']
-                            })
-                            
-                            # Add primary keys by using the current dataframe
-                            for pk in primary_keys:
-                                if pk in df.columns:
-                                    # Get the values using the filtered indices
-                                    if isinstance(filtered_df.index, pd.MultiIndex):
-                                        # For multi-level index, get the first level
-                                        idx = filtered_df.index.get_level_values(0)
-                                    else:
-                                        idx = filtered_df.index
-                                    
-                                    # Use loc to get values by index
-                                    pk_values = df.loc[idx, pk].values
-                                    pk_datetime_df[pk] = pk_values
-                            
-                            # Drop duplicates based on primary keys and resample
-                            unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
-                            unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
-                            chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
-                        except Exception as e:
-                            st.warning(f"Could not calculate unique primary keys: {str(e)}")
-                    
-                    st.line_chart(chart_df, use_container_width=True)
+                        st.altair_chart(trend_chart, use_container_width=True)
+                        
+                        # Show all dates if requested
+                        if show_all_dates:
+                            st.markdown("#### 📅 All Dates")
+                            st.dataframe(datetime_df['__datetime__'].dt.strftime('%Y-%m-%d %H:%M:%S').reset_index(drop=True))
                 
                 # Display wordcloud if available
                 if 'wordcloud_text' in insights:
@@ -1819,6 +1794,160 @@ if df is not None:
                     elif chart_type == 'histogram':
                         hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
                             alt.X(f"{selected_field}:Q", bin=alt.Bin(maxbins=30), title=selected_field),
+                            y=alt.Y('count()', title='Count')
+                        ).properties(
+                            width=600,
+                            height=300,
+                            title="Distribution"
+                        )
+                        st.altair_chart(hist, use_container_width=True)
+                
+                # Display tables
+                for table_type, table_df in insights['tables']:
+                    if table_type == 'value_counts':
+                        st.markdown("### 📊 Value Counts and Percentages")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'value_counts_pk':
+                        st.markdown("### 📊 Value Counts and Percentages (Per Primary Key)")
+                        st.dataframe(table_df, use_container_width=True)
+                    elif table_type == 'Unique Values':
+                        with st.expander("📋 View Unique Values (with counts)"):
+                            st.dataframe(table_df, use_container_width=True)
+    elif view_mode == "View All Fields (No Pagination)":
+        # Process all fields if not already processed
+        fields_to_process = [col for col in all_fields if col not in st.session_state.processed_fields]
+        if fields_to_process:
+            st.info(f"Processing {len(fields_to_process)} fields...")
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                process_func = partial(process_single_column, 
+                                     total_records=len(df),
+                                     primary_keys=primary_keys if 'primary_keys' in locals() else None,
+                                     original_df=df)
+                
+                # Submit all fields that need processing
+                future_to_col = {
+                    executor.submit(process_func, df[col], col): col 
+                    for col in fields_to_process
+                }
+                
+                # Process results as they complete
+                for future in as_completed(future_to_col):
+                    col = future_to_col[future]
+                    try:
+                        insights = future.result()
+                        st.session_state.processed_fields[col] = insights
+                    except Exception as e:
+                        st.error(f"Error processing column {col}: {str(e)}")
+        
+        # Display insights for all fields
+        for col in all_fields:
+            if col in st.session_state.processed_fields:
+                insights = st.session_state.processed_fields[col]
+                
+                # Display the insights for this column
+                st.markdown(f"### 🧬 {insights['column_name']}")
+                
+                if 'error' in insights:
+                    st.error(f"Error processing column: {insights['error']}")
+                    continue
+                
+                # Display coverage
+                if insights['text_content']:
+                    st.progress(float(insights['text_content'][0].split(': ')[1].strip('%')) / 100,
+                              text=insights['text_content'][0])
+                
+                # Handle datetime columns
+                if insights.get('is_datetime'):
+                    st.markdown("#### 📈 Trend (Date/Time Field)")
+                    parsed_col = insights['parsed_datetime']
+                    
+                    # Create datetime visualization UI
+                    freq = st.selectbox(
+                        f"Choose trend resolution for `{col}`",
+                        options=["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
+                        index=0,
+                        key=f"freq_{col}"
+                    )
+                    
+                    freq_map = {
+                        "Daily": "D",
+                        "Weekly": "W",
+                        "Monthly": "M",
+                        "Quarterly": "Q",
+                        "Yearly": "Y"
+                    }
+                    
+                    show_all_dates = st.checkbox(
+                        f"Show all dates for `{col}`",
+                        value=False,
+                        key=f"show_all_{col}"
+                    )
+                    
+                    # Get the original index of non-null datetime values
+                    valid_datetime_mask = parsed_col.notna()
+                    original_indices = parsed_col.index[valid_datetime_mask]
+                    
+                    # Create a DataFrame with the datetime column and original index
+                    datetime_df = pd.DataFrame({
+                        '__datetime__': parsed_col[valid_datetime_mask]
+                    }, index=original_indices)
+                    
+                    # Process datetime data
+                    if not datetime_df.empty:
+                        # Resample data based on selected frequency
+                        resampled = datetime_df.resample(freq_map[freq], on='__datetime__').size().reset_index()
+                        resampled.columns = ['Date', 'Count']
+                        
+                        # Create the trend chart
+                        trend_chart = alt.Chart(resampled).mark_line(point=True).encode(
+                            x=alt.X('Date:T', title='Date'),
+                            y=alt.Y('Count:Q', title='Count'),
+                            tooltip=['Date:T', 'Count:Q']
+                        ).properties(
+                            width=600,
+                            height=300,
+                            title=f"Trend Analysis ({freq})"
+                        )
+                        
+                        st.altair_chart(trend_chart, use_container_width=True)
+                        
+                        # Show all dates if requested
+                        if show_all_dates:
+                            st.markdown("#### 📅 All Dates")
+                            st.dataframe(datetime_df['__datetime__'].dt.strftime('%Y-%m-%d %H:%M:%S').reset_index(drop=True))
+                
+                # Display wordcloud if available
+                if 'wordcloud_text' in insights:
+                    st.markdown("#### ☁️ Word Cloud (Long Text Field)")
+                    try:
+                        wordcloud = WordCloud(width=800, height=400, background_color=None, mode='RGBA').generate(insights['wordcloud_text'])
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        fig.patch.set_alpha(0)
+                        ax.imshow(wordcloud, interpolation='bilinear')
+                        ax.axis("off")
+                        st.pyplot(fig)
+                    except Exception as e:
+                        st.warning(f"⚠️ Word cloud generation failed: {str(e)}")
+                
+                # Display charts
+                for chart_type, chart_df in insights['charts']:
+                    if chart_type == 'bar_chart':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (All Records)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'bar_chart_pk':
+                        chart = create_bar_chart(chart_df, 'Occurrences', col, "Top 10 Values (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Top Values (Per Primary Key)")
+                        st.altair_chart(chart, use_container_width=True)
+                    elif chart_type == 'donut_chart':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (All Records)")
+                        st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_{col}")
+                    elif chart_type == 'donut_chart_pk':
+                        fig = render_donut_chart(chart_df, 'Occurrences', col, "Value Distribution (Per Unique Primary Key)", color_scheme='greens')
+                        st.markdown("#### Value Distribution (Per Primary Key)")
+                        st.plotly_chart(fig, use_container_width=True, key=f"plotly_donut_pk_{col}")
+                    elif chart_type == 'histogram':
+                        hist = alt.Chart(chart_df).mark_bar(color='teal').encode(
+                            alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
                             y=alt.Y('count()', title='Count')
                         ).properties(
                             width=600,
@@ -1935,59 +2064,29 @@ if df is not None:
                             '__datetime__': parsed_col[valid_datetime_mask]
                         }, index=original_indices)
                         
-                        if not show_all_dates:
-                            min_date = parsed_col.min().date()
-                            max_date = parsed_col.max().date()
-                            start_date, end_date = st.date_input(
-                                f"Select date range for `{col}`",
-                                value=(min_date, max_date),
-                                min_value=min_date,
-                                max_value=max_date,
-                                key=f"range_{col}"
+                        # Process datetime data
+                        if not datetime_df.empty:
+                            # Resample data based on selected frequency
+                            resampled = datetime_df.resample(freq_map[freq], on='__datetime__').size().reset_index()
+                            resampled.columns = ['Date', 'Count']
+                            
+                            # Create the trend chart
+                            trend_chart = alt.Chart(resampled).mark_line(point=True).encode(
+                                x=alt.X('Date:T', title='Date'),
+                                y=alt.Y('Count:Q', title='Count'),
+                                tooltip=['Date:T', 'Count:Q']
+                            ).properties(
+                                width=600,
+                                height=300,
+                                title=f"Trend Analysis ({freq})"
                             )
                             
-                            # Filter the datetime DataFrame using boolean indexing
-                            date_mask = (datetime_df['__datetime__'].dt.date >= start_date) & \
-                                      (datetime_df['__datetime__'].dt.date <= end_date)
-                            filtered_df = datetime_df[date_mask].copy()
-                        else:
-                            filtered_df = datetime_df.copy()
-                        
-                        # Resample and count records
-                        resampled = filtered_df.set_index('__datetime__').resample(freq_map[freq])
-                        record_counts = resampled.size().rename("Total Records")
-                        chart_df = pd.DataFrame(record_counts)
-                        
-                        if primary_keys:
-                            try:
-                                # Create a DataFrame with primary keys and datetime
-                                pk_datetime_df = pd.DataFrame({
-                                    '__datetime__': filtered_df['__datetime__']
-                                })
-                                
-                                # Add primary keys by using the current dataframe
-                                for pk in primary_keys:
-                                    if pk in df.columns:
-                                        # Get the values using the filtered indices
-                                        if isinstance(filtered_df.index, pd.MultiIndex):
-                                            # For multi-level index, get the first level
-                                            idx = filtered_df.index.get_level_values(0)
-                                        else:
-                                            idx = filtered_df.index
-                                        
-                                        # Use loc to get values by index
-                                        pk_values = df.loc[idx, pk].values
-                                        pk_datetime_df[pk] = pk_values
-                                
-                                # Drop duplicates based on primary keys and resample
-                                unique_keys_df = pk_datetime_df.drop_duplicates(subset=primary_keys)
-                                unique_counts = unique_keys_df.set_index('__datetime__').resample(freq_map[freq]).size().rename("Unique Primary Keys")
-                                chart_df = chart_df.join(unique_counts, how='outer').fillna(0)
-                            except Exception as e:
-                                st.warning(f"Could not calculate unique primary keys: {str(e)}")
-                        
-                        st.line_chart(chart_df, use_container_width=True)
-                        continue
+                            st.altair_chart(trend_chart, use_container_width=True)
+                            
+                            # Show all dates if requested
+                            if show_all_dates:
+                                st.markdown("#### 📅 All Dates")
+                                st.dataframe(datetime_df['__datetime__'].dt.strftime('%Y-%m-%d %H:%M:%S').reset_index(drop=True))
                     
                     # Display wordcloud if available
                     if 'wordcloud_text' in insights:
