@@ -94,7 +94,7 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
 
 ```
 .
-├── app.py            # Main Streamlit application
+├── Home.py            # Main Streamlit application
 ├── Dockerfile        # Docker build instructions
 ├── README.md         # You're here
 └── requirements.txt  # Python dependencies (create if missing)
