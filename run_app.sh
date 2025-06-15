@@ -1,7 +1,7 @@
 #!/bin/bash
 
 VENV_DIR="venv"
-APP_FILE="app.py"
+APP_FILE="Home.py"
 REQUIREMENTS_FILE="requirements.txt"
 
 # ───────────────────────────────
