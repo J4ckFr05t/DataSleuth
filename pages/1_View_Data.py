@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(
     page_title="Raw Data - DataSleuth",
@@ -152,10 +153,15 @@ else:
     # CSV Export
     if selected_columns:
         csv = df[selected_columns].to_csv(index=False).encode('utf-8')
+        # Get original filename without extension
+        original_filename = st.session_state.file_name.rsplit('.', 1)[0] if st.session_state.file_name else "data"
+        # Add datetime suffix
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_filename = f"{original_filename}-raw-data-export-{timestamp}.csv"
         st.download_button(
             "📥 Download as CSV",
             csv,
-            "raw_data.csv",
+            export_filename,
             "text/csv",
             key='download-csv'
         ) 
