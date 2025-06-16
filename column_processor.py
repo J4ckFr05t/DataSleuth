@@ -39,17 +39,28 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
             insights['tables'].append(('Unique Values', value_counts))
         elif not is_numeric:
             try:
-                # Try parsing as datetime
-                parsed_col = pd.to_datetime(col_data, errors="coerce")
-                if parsed_col.notna().sum() == 0 and pd.api.types.is_numeric_dtype(col_data):
-                    parsed_col = pd.to_datetime(col_data, errors="coerce", unit="ms")
-                    if parsed_col.notna().sum() == 0:
-                        parsed_col = pd.to_datetime(col_data, errors="coerce", unit="s")
-
-                if parsed_col.notna().sum() > 0:
-                    insights['is_datetime'] = True
-                    insights['parsed_datetime'] = parsed_col
-                    return insights
+                # Try parsing as datetime with strict validation
+                parsed_col = pd.to_datetime(col_data, errors="coerce", format="mixed")
+                
+                # Only consider it a date field if:
+                # 1. At least 90% of non-null values can be parsed as dates
+                # 2. The values are actually dates (not just numbers that happen to parse as dates)
+                valid_dates = parsed_col.notna().sum()
+                total_non_null = len(col_data)
+                date_ratio = valid_dates / total_non_null if total_non_null > 0 else 0
+                
+                if date_ratio >= 0.9:
+                    # Additional check to ensure these are actual dates, not just numbers
+                    sample_values = col_data.head(10).astype(str)
+                    has_date_patterns = any(
+                        any(pattern in val.lower() for pattern in ['-', '/', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'])
+                        for val in sample_values
+                    )
+                    
+                    if has_date_patterns:
+                        insights['is_datetime'] = True
+                        insights['parsed_datetime'] = parsed_col
+                        return insights
             except Exception:
                 pass
 
