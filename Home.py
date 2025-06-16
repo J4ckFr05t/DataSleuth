@@ -205,12 +205,13 @@ def process_patterns_parallel(col_data, col_name):
 
         pattern_info = []
         for pat, count in pattern_counts.items():
-            example = patterns[patterns.apply(lambda x: x[0]) == pat].iloc[0][1]
+            # Get the first actual value that matches this pattern
+            example_value = col_data[patterns.apply(lambda x: x[0]) == pat].iloc[0]
             confidence = round((count / total) * 100, 2)
             pattern_info.append({
                 "Field": col_name,
                 "Pattern": pat,
-                "Example": example if example else "",
+                "Example": str(example_value) if example_value else "",
                 "Confidence (%)": confidence
             })
         return pattern_info
