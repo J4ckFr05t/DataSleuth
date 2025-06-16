@@ -2218,6 +2218,14 @@ if df is not None:
     if 'pattern_detection_run' not in st.session_state:
         st.session_state.pattern_detection_run = False
 
+    # Add field selection before running pattern detection
+    selected_fields = st.multiselect(
+        "Select fields for pattern detection",
+        options=df.columns.tolist(),
+        default=df.columns.tolist(),
+        key="pattern_detection_fields"
+    )
+
     if st.button("Run Pattern Detection"):
         st.session_state.pattern_detection_run = True
         st.rerun()
@@ -2227,15 +2235,15 @@ if df is not None:
         pattern_progress = st.progress(0)
         pattern_status = st.empty()
 
-        # Process patterns in parallel
+        # Process patterns in parallel only for selected fields
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             pattern_futures = {
                 executor.submit(process_patterns_parallel, df[col].dropna().astype(str), col): col 
-                for col in df.columns
+                for col in selected_fields
             }
             
             all_pattern_info = []
-            total_columns = len(df.columns)
+            total_columns = len(selected_fields)
             completed = 0
             
             for future in as_completed(pattern_futures):
