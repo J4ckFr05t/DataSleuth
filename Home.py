@@ -212,7 +212,7 @@ def process_patterns_parallel(col_data, col_name):
                 "Field": col_name,
                 "Pattern": pat,
                 "Example": str(example_value) if example_value else "",
-                "Confidence (%)": confidence
+                "Confidence (%)": f"{count} ({confidence}%)"
             })
         return pattern_info
     except Exception as e:
