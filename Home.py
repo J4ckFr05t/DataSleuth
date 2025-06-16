@@ -907,11 +907,51 @@ with st.expander("🔌 Database Connection Options", expanded=False):
                         # Show loading message
                         loading_msg = st.info("Loading data from database... This may take a few moments.")
                         
+                        # Create progress bar
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
                         # Single database call to fetch all data
                         with hive.Connection(**conn_params) as conn:
-                            df = pd.read_sql(query, conn)
+                            # First get total count
+                            count_query = f"SELECT COUNT(*) as total FROM ({query}) as subquery"
+                            total_count = pd.read_sql(count_query, conn).iloc[0]['total']
+                            
+                            # Initialize progress tracking
+                            processed_rows = 0
+                            chunk_size = 10000  # Process in chunks of 10k rows
+                            
+                            # Read data in chunks using ROW_NUMBER() for pagination
+                            chunks = []
+                            for chunk_num in range(0, total_count, chunk_size):
+                                chunk_query = f"""
+                                WITH numbered_rows AS (
+                                    SELECT *, ROW_NUMBER() OVER (ORDER BY 1) as row_num
+                                    FROM ({query}) as subquery
+                                )
+                                SELECT * FROM (
+                                    SELECT * FROM numbered_rows
+                                    WHERE row_num > {chunk_num} AND row_num <= {chunk_num + chunk_size}
+                                ) t
+                                """
+                                chunk = pd.read_sql(chunk_query, conn)
+                                # Drop the row_num column after fetching
+                                if 'row_num' in chunk.columns:
+                                    chunk = chunk.drop('row_num', axis=1)
+                                chunks.append(chunk)
+                                
+                                # Update progress
+                                processed_rows += len(chunk)
+                                progress = min(processed_rows / total_count, 1.0)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Loading data: {progress:.1%} complete ({processed_rows:,}/{total_count:,} rows)")
+                            
+                            # Combine all chunks
+                            df = pd.concat(chunks, ignore_index=True)
                         
-                        # Clear loading message
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
                         loading_msg.empty()
                         
                         # Store the dataframe in session state
