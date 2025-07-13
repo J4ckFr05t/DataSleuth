@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import swifter
 
 def process_single_column(col_data, col_name, total_records, primary_keys=None, original_df=None):
     """Process a single column and return its insights."""
@@ -64,7 +65,7 @@ def process_single_column(col_data, col_name, total_records, primary_keys=None, 
             except Exception:
                 pass
 
-            avg_str_len = col_data.astype(str).apply(len).mean()
+            avg_str_len = col_data.astype(str).swifter.apply(len).mean()
 
             if avg_str_len > 50:
                 # Word cloud logic

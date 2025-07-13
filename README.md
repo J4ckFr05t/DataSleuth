@@ -35,10 +35,11 @@ DataSleuth is a powerful, interactive Streamlit-based application for performing
   - Custom keyword extraction
 
 - ⚙️ Performance Optimizations
-  - Parallel processing for large datasets
+  - Parallel processing for large datasets using swifter
   - Batch processing for field analysis
   - Progress tracking and status updates
   - Memory-efficient data handling
+  - Optimized pandas operations with swifter for faster apply operations
 
 - 🛠️ User Experience
   - Dynamic filtering and sidebar controls

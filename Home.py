@@ -27,6 +27,7 @@ from tqdm import tqdm
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import pydeck as pdk
+import swifter
 
 def load_country_coordinates():
     """Load country coordinates from CSV file"""
@@ -89,7 +90,7 @@ def create_country_map(df, country_column, value_column=None):
     if value_column:
         min_value = map_df['value'].min()
         max_value = map_df['value'].max()
-        map_df['radius'] = map_df['value'].apply(
+        map_df['radius'] = map_df['value'].swifter.apply(
             lambda x: 100000 + (400000 - 100000) * ((x - min_value) / (max_value - min_value))
         )
     else:
@@ -196,8 +197,8 @@ def create_country_map(df, country_column, value_column=None):
 def process_patterns_parallel(col_data, col_name):
     """Process patterns for a single column in parallel"""
     try:
-        patterns = col_data.apply(detect_pattern)
-        pattern_counts = patterns.apply(lambda x: x[0]).value_counts()
+        patterns = col_data.swifter.apply(detect_pattern)
+        pattern_counts = patterns.swifter.apply(lambda x: x[0]).value_counts()
         total = pattern_counts.sum()
 
         if total == 0:
@@ -206,7 +207,7 @@ def process_patterns_parallel(col_data, col_name):
         pattern_info = []
         for pat, count in pattern_counts.items():
             # Get the first actual value that matches this pattern
-            example_value = col_data[patterns.apply(lambda x: x[0]) == pat].iloc[0]
+            example_value = col_data[patterns.swifter.apply(lambda x: x[0]) == pat].iloc[0]
             confidence = round((count / total) * 100, 2)
             pattern_info.append({
                 "Field": col_name,
@@ -222,7 +223,7 @@ def process_patterns_parallel(col_data, col_name):
 def process_extraction_parallel(col_data, col_name, total_records, extraction_func):
     """Process extractions (country/region/business unit) for a single column in parallel"""
     try:
-        results = col_data.apply(lambda x: (x, extraction_func(x)))
+        results = col_data.swifter.apply(lambda x: (x, extraction_func(x)))
         records_processed = len(col_data)
         
         # Initialize counters for each category
@@ -3061,7 +3062,7 @@ if df is not None:
                         if country_value_coverage:
                             coverage_df = pd.DataFrame(country_value_coverage)
                             coverage_df['coverage'] = (coverage_df['count'] / total_records * 100).round(2)
-                            coverage_df['fields'] = coverage_df['fields'].apply(lambda x: ', '.join(sorted(x)))
+                            coverage_df['fields'] = coverage_df['fields'].swifter.apply(lambda x: ', '.join(sorted(x)))
                             coverage_df = coverage_df.sort_values('coverage', ascending=False)
                             coverage_df = coverage_df[['country', 'coverage', 'count', 'fields']]
                             coverage_df.columns = ['Country', 'Coverage (%)', 'Count', 'Fields']
