@@ -1,5 +1,5 @@
 [server]
-maxUploadSize = 3072  # Size in MB (this will set the limit to 3 GB)
+maxUploadSize = 5120  # Size in MB (this will set the limit to 3 GB)
 
 [theme]
 base="dark"
